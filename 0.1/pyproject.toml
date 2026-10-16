@@ -59,6 +59,11 @@ strict = true
 python_version = "3.11"
 mypy_path = "src"
 
+# exchange_calendars nie ma stubów ani markera py.typed (S02, D-020).
+[[tool.mypy.overrides]]
+module = ["exchange_calendars", "exchange_calendars.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not network and not llm_live'"

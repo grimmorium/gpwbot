@@ -75,11 +75,66 @@ w `migrations/` (`env.py`, `script.py.mako`) są lintowane normalnie.
 `repo.get_prices_df` zwraca DataFrame; aby utrzymać `mypy --strict` bez wyłączeń, dodano
 `pandas-stubs` do `[dev]` (analogicznie do istniejącego `types-PyYAML`).
 
+## Decyzje S02
+
+### D-013. "Otwarcie sesji" = początek notowań ciągłych
+Test DST z S02 (otwarcie 2026-03-27 = 08:00 UTC, 2026-03-30 = 07:00 UTC) jednoznacznie
+określa semantykę: `session_open_ts(d)` to początek notowań ciągłych (9:00 lokalnie), a nie
+start fazy przed otwarciem. Faza przed otwarciem to wyłącznie składanie zleceń — transakcje
+są zawierane od 9:00 (SZOG §5–§6). `session_close_ts(d)` = koniec aukcji zamknięcia (17:00);
+faza dogrywki 17:00–17:05 nie jest modelowana w v1.
+
+### D-014. Godziny sesji GPW zweryfikowane — korekta `preopen_start` na 8:30
+Zgodnie z SZOG §5(1)(1) (PDF: gpw.pl/pub/GPW/files/PDF/regulacje/SZOG_GPW_WATS_pl.pdf,
+dostęp 2026-10-16): aukcja otwarcia **8:30–9:00**, notowania ciągłe 9:00–16:50, aukcja
+zamknięcia 16:50–17:00. Przykładowa wartość `preopen_start: "08:00"` z sekcji 2 Części I
+była błędna — skorygowano w `config/config.yaml` i domyślnych wartościach `MarketCfg`.
+Dni wolne GPW 2025–2026 (gpw.pl "Szczegóły sesji", dostęp 2026-10-16) są zgodne z XWAR
+exchange_calendars 4.13.2 bez wyjątków — `config/gpw_holidays_override.yaml` jest pusty;
+GPW nie honoruje "przeniesionych" dni wolnych (5 maja i 3 listopada 2025 to sesje).
+
+### D-015. Model tick size: grupy pasm cenowych, wartości przykładowe
+SZOG §70: krok notowania akcji jest ustalany per instrument wg pasma płynności z tabeli
+załącznika do Rozporządzenia delegowanego (UE) 2017/588 i ceny w zleceniu; nie może być
+mniejszy niż wartość z tej tabeli. Model S02 upraszcza to do statycznych grup pasm cenowych
+(`config/tick_sizes.yaml`). **Wartości tabeli są przykładowe** — EUR-Lex był niedostępny
+w trakcie S02, więc V-02 pozostaje otwarte; tabela jest zaprojektowana tak, by tick każdego
+wyższego pasma był wielokrotnością niższych (granice 10/100 są wielokrotnościami ticków),
+co gwarantuje idempotencję `round_price` i ważność wyniku w jego własnym paśmie.
+
+### D-016. `commission(0) = 0`, nie minimum
+Wzór specyfikacji `max(value × pct, min)` dla wartości 0 dałby prowizję minimalną, co jest
+nieuzasadnione biznesowo (brak transakcji → brak prowizji). Zaimplementowano wyjątek:
+`value == 0 → Decimal("0.00")`; ujemna wartość rzuca `ValueError`.
+
+### D-017. Ścieżka pliku nadpisań kalendarza
+`GpwCalendar(cfg, override_path=None)`: przy `None` domyślnie `config/gpw_holidays_override.yaml`
+względem CWD (CLI działa z roota projektu); testy przekazują jawną ścieżkę. Brak pliku = puste
+nadpisywania (nie błąd). Format: mapa z kluczami `holidays`/`sessions` (listy dat ISO); pokrycie
+dat między listami rzuca `ConfigError`.
+
+### D-018. Konwencje arytmetyki sesji
+`sessions_between(a, b)` i `count_sessions(a, b)` liczą przedział półotwarty `(a, b]` — dzięki
+temu `add_sessions`/`count_sessions` są wzajemnie odwrotne (wymóg testów S02).
+`add_sessions(d, n)` wymaga, by `d` był dniem sesji (`ValueError` w przeciwnym razie);
+`previous_session(d)` działa dla dowolnego dnia.
+
+### D-019. `CostsCfg.dividend_tax_pct = 19`
+Sekcja 2 Części I wymienia podatek 19% jako parametr rynku, ale S00 nie miał pola na niego.
+Dodano `dividend_tax_pct: Pct = Decimal("19")` do `CostsCfg` (dodanie z domyślną wartością —
+bez zmiany istniejących sygnatur); `net_dividend(gross, tax_rate)` przyjmuje stawkę jawnie,
+a S07/S09 będą ją czytać z konfiguracji.
+
+### D-020. Mypy: `ignore_missing_imports` dla exchange_calendars
+Biblioteka nie ma stubów ani markera `py.typed`; dodano override per-moduł w `pyproject.toml`
+(analogicznie do podejścia z `pandas-stubs`, D-012 — tu bez pakietu stubów, bo API używane
+w S02 jest wąskie).
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |
 | --- | --- | --- | --- |
-| V-01 | Aktualne godziny sesji GPW, widełki wahań, T+2 vs T+1 (regulaminy GPW/KDPW) | S02 | otwarte — domyślne z sekcji 2 Części I |
-| V-02 | Tabela tick size (źródło: regulamin GPW) | S02 | otwarte — wartości przykładowe |
+| V-01 | Aktualne godziny sesji GPW, widełki wahań, T+2 vs T+1 (regulaminy GPW/KDPW) | S02 | częściowo domknięte — godziny zweryfikowane wg SZOG §5(1)(1), `preopen_start` skorygowane na 8:30 (D-014); widełki statyczne WIG20/mWIG40/inne = ±30/±15/±10% od kursu odniesienia wg przedziału ceny (SZOG §71) — płaska wartość `price_limit_pct: 10` w config to uproszczenie do walidacji limitów; **T+2 vs T+1 pozostaje otwarte** |
+| V-02 | Tabela tick size (źródło: regulamin GPW) | S02 | częściowo domknięte — mechanizm zweryfikowany wg SZOG §70 (pasma płynności UE 2017/588 + cena; D-015); **wartości tabeli pozostają przykładowe** (EUR-Lex niedostępny w trakcie S02) |
 | V-03 | Dostępność, format i warunki użycia Stooq / yfinance / RSS / ESPI; czy ceny są skorygowane | S03 | otwarte |
 | V-04 | Która flaga llama.cpp steruje trybem rozumowania Qwen (`enable_thinking`?) | S11 | otwarte — config ma `thinking_extraction`/`thinking_decision` |

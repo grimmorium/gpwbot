@@ -1,0 +1,14 @@
+# Tabela tick size GPW (S02): grupy z pasmami cenowymi {max_price, tick}.
+# max_price: null = bez gornego ograniczenia (ostatnie pasmo); cena rowna max_price
+# nalezy do danego pasma.
+#
+# UWAGA: wartosci PRZYKLOWE — do zastapienia danymi z regulaminu GPW / tabeli
+# załącznika do Rozporzadzenia delegowanego Komisji (UE) 2017/588 (V-02,
+# docs/decisions.md). Mechanizm: SZOG §70 — krok notowania dla akcji jest ustalany
+# per instrument wedlug pasma plynnosci i ceny w zleceniu; nie moze byc mniejszy niz
+# wartosc z tabeli UE. Model S02 upraszcza to do grup statycznych pasm cenowych.
+groups:
+  default:
+    - {max_price: "10", tick: "0.05"}
+    - {max_price: "100", tick: "0.10"}
+    - {max_price: null, tick: "0.50"}

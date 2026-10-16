@@ -1,0 +1,7 @@
+# Wyjatki od kalendarza exchange_calendars (XWAR) dla GPW (S02).
+# holidays: dni wolne, ktore biblioteka traktuje jako sesje (np. zawieszenie notowan);
+# sessions:  dni sesyjne, ktore biblioteka traktuje jako dni wolne (np. sesja nadrobiona).
+# Puste = pelna zgodnosc z biblioteka; na lata 2025-2026 brak rozbieznosci
+# (zweryfikowano w S02, patrz docs/decisions.md D-014/V-01).
+holidays: []
+sessions: []

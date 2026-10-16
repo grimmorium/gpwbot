@@ -9,8 +9,9 @@ paths:
   raw_dir: data/raw
   reports_dir: reports
 
+# Godziny faz zweryfikowane w S02 wg SZOG GPW §5(1)(1) (D-014): aukcja otwarcia 8:30–9:00.
 market:
-  preopen_start: "08:00"
+  preopen_start: "08:30"
   preopen_end: "09:00"
   continuous_start: "09:00"
   continuous_end: "16:50"

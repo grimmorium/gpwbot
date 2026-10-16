@@ -40,7 +40,8 @@ class PathsCfg(_Cfg):
 
 
 class MarketCfg(_Cfg):
-    preopen_start: dt.time = dt.time(8, 0)
+    # Domyślne godziny faz GPW zweryfikowane w S02 wg SZOG §5(1)(1) (D-014).
+    preopen_start: dt.time = dt.time(8, 30)
     preopen_end: dt.time = dt.time(9, 0)
     continuous_start: dt.time = dt.time(9, 0)
     continuous_end: dt.time = dt.time(16, 50)
@@ -115,6 +116,8 @@ class CostsCfg(_Cfg):
     commission_pct: Pct = Decimal("0.30")
     commission_min_pln: Decimal = Field(default=Decimal("5"), ge=0)
     slippage_bps: int = Field(default=15, ge=0)
+    # Podatek od dywidendy (sekcja 2 Czesci I); uzywany w S07/S09 — D-019.
+    dividend_tax_pct: Pct = Decimal("19")
 
 
 # Placeholder — pola rozszerzane w S05 (decyzja D-001).

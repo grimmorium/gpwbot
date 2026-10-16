@@ -120,3 +120,58 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
 - Globalna fixture `tmp_db` w `tests/conftest.py`: plik SQLite ze schematem (`create_all`) i
   PRAGMA jak w produkcji; zwraca `(engine, session_factory)`. Zgodność migracji z metadanymi
   sprawdzają testy w `tests/db/test_migrations.py`.
+
+## S02
+
+### `gpwbot.calendar`
+
+- `SessionTimes(date, preopen_start, preopen_end, continuous_start, continuous_end,
+  close_auction_start, close_auction_end)` — frozen dataclass; wszystkie godziny aware
+  (Europe/Warsaw).
+- `GpwCalendar(cfg: AppConfig, override_path: str | Path | None = None)` — kalendarz sesji GPW:
+  exchange_calendars XWAR + nadpisywania z YAML (`holidays`/`sessions`; brak pliku = puste;
+  D-017); godziny faz wyłącznie z `cfg.market`. Metody:
+  - `is_session(d) -> bool` — dzień sesji po nałożeniu nadpisań.
+  - `next_session_after(ts) -> dt.date` — pierwsza sesja, której otwarcie jest późniejsze niż
+    `ts`; bieżąca sesja, jeśli `ts` przed jej otwarciem; naive `ts` rzuca `ValueError`.
+  - `previous_session(d) -> dt.date` — ostatnia sesja ściśle przed `d` (`d` dowolny).
+  - `sessions_between(a, b) -> list[dt.date]` / `count_sessions(a, b) -> int` — przedział
+    półotwarty `(a, b]`; wymaga `a <= b`, inaczej `ValueError` (D-018).
+  - `add_sessions(d, n) -> dt.date` — przesunięcie o `n` sesji; `d` musi być sesją.
+  - `session_open_ts(d)` / `session_close_ts(d) -> dt.datetime` — otwarcie = start notowań
+    ciągłych (D-013), zamknięcie = koniec aukcji zamknięcia; dzień niesesyjny rzuca
+    `ValueError`.
+  - `session_phases(d) -> SessionTimes`.
+
+### `gpwbot.ticks`
+
+- `TickBand(max_price: Decimal | None, tick: Decimal)` — frozen dataclass; cena równa
+  `max_price` należy do pasma; `None` = bez górnego ograniczenia.
+- `RoundMode` — Enum: `UP`, `DOWN`, `NEAREST` (tie w NEAREST → HALF_UP).
+- `TickTable(groups)` / `TickTable.from_yaml(path) -> TickTable` — grupy pasm cenowych; grupa
+  `default` wymagana (`ValueError`); błędy pliku/schematu jako `ConfigError`. Plik:
+  `config/tick_sizes.yaml` (wartości przykładowe — V-02, D-015). Metody:
+  - `tick_for(price, group="default") -> Decimal`; cena ≤ 0 i nieznana grupa rzucają
+    `ValueError`.
+  - `round_price(price, mode, *, group="default") -> Decimal` — dokładna arytmetyka Decimal;
+    DOWN poniżej jednego ticka rzuca `ValueError`.
+  - `is_valid_price(price, group="default") -> bool` — dodatnia wielokrotność ticka pasma.
+
+### `gpwbot.costs` (czyste funkcje)
+
+- `Side` — Enum: `BUY`, `SELL` (do ponownego użycia w S07).
+- `commission(value, cfg: CostsCfg) -> Decimal` — max(wartość × pct/100, min), HALF_UP do 0,01;
+  wartość 0 → 0.00 (D-016); ujemna rzuca `ValueError`.
+- `apply_slippage(price, side: Side, bps: int) -> Decimal` — BUY w górę, SELL w dół; dokładny
+  iloczyn (kwantyzacja do ticka należy do fill model S07); cena ≤ 0 / bps < 0 rzucają
+  `ValueError`.
+- `net_dividend(gross, tax_rate) -> Decimal` — brutto × (1 − stawka/100), HALF_UP do 0,01;
+  stawka poza 0–100% i ujemne brutto rzucają `ValueError`.
+
+### Konfiguracja (rozszerzenie S00/S02)
+
+- `CostsCfg.dividend_tax_pct: Decimal = 19` — podatek od dywidendy (D-019).
+- Domyślne godziny faz GPW zweryfikowane wg SZOG §5(1)(1): `preopen_start = 8:30` (dawniej
+  przykładowe 8:00; D-014) — skorygowane w `MarketCfg` i `config/config.yaml`.
+- Nowe pliki: `config/tick_sizes.yaml`, `config/gpw_holidays_override.yaml`; fixture testowa
+  `tests/fixtures/gpw_holidays.yaml` (oficjalne dni wolne GPW 2025–2026).
