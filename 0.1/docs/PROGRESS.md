@@ -7,7 +7,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | Sesja | Zakres | Status | Uwagi |
 | --- | --- | --- | --- |
 | S00 | Szkielet, konfiguracja, narzędzia | done | pyproject, config/clock/context/logging/cli, check.sh(+ps1), split_spec → docs/sessions/; 53 testów zielone, pokrycie 98%, `gpwbot doctor` działa |
-| S01 | Baza danych i migracje | todo | zależy od: S00 |
+| S01 | Baza danych i migracje | done | db/{types,models,session,repo,migrate}.py + Alembic (rewizja initial), CLI `db upgrade`, fixture `tmp_db`; 97 testów zielone, pokrycie 98% (moduły db ≥ 92%) |
 | S02 | Kalendarz GPW, tick size, koszty | todo | zależy od: S00 |
 | S03 | Ceny: Stooq, jakość danych, ingest | todo | zależy od: S01, S02 |
 | S04 | Universe, instrumenty, aliasy | todo | zależy od: S01, S03 |
@@ -27,16 +27,20 @@ Kamienie milowe: po S09 paper trading strategii bazowej (bez LLM); po S13 pełny
 
 ## Decyzje
 
-Pełna lista w `docs/decisions.md`. Z S00: D-001…D-008 (placeholdery sekcji config, nadpisywania
-ze środowiska, ścieżki, kody wyjścia CLI, logowanie structlog, check.ps1 na Windows, pokrycie).
+Pełna lista w `docs/decisions.md`. Z S00: D-001…D-008. Z S01: D-009 (parametr `now` w
+`upsert_prices`), D-010 (autogenerate nie emituje importów typów własnych — ręczny import w
+rewizji), D-011 (ruff pomija `migrations/versions`), D-012 (`pandas-stubs` jako zależność dev).
 
 ## Dług techniczny
 
 - Sekcje `screener`, `baseline`, `text`, `eval` w konfiguracji to placeholdery — rozbudowa
   w S05/S09/S10–S12/S14 (D-001).
-- `AppContext` ma tylko pola `config` i `clock`; kolejne sesje dodają pola (A3).
+- `AppContext` ma tylko pola `config` i `clock`; kolejne sesje dodają pola (A3) — naturalny
+  moment: S03 (`session_factory`).
+- `upsert_instruments` robi select+update per ticker (nie batch upsert); przy dziesiątkach
+  spółek w S04 to wystarcza, ale backfill może chcieć wersję wsadową.
 
 ## Pytania otwarte
 
-- Brak na koniec S00. Weryfikacje z sekcji 18 Części I przejęte do `docs/decisions.md`
-  wraz z sesjami odpowiedzialnymi (S02, S03, S11).
+- Brak na koniec S01. Weryfikacje z sekcji 18 Części I pozostają w `docs/decisions.md`
+  (S02: V-01/V-02, S03: V-03, S11: V-04).

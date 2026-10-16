@@ -50,6 +50,31 @@ Sekcja trwa od nagłówka `### Sdd` do następnego nagłówka pasującego do `^#
 sesja) lub do nagłówka poziomu 2 (`## ...`). Treść pliku zawiera własny nagłówek. Brak sekcji
 nie jest błędem (pusta lista).
 
+## Decyzje S01
+
+### D-009. `upsert_prices(..., now=...)` — czas `ingested_at`
+Specyfikacja podaje sygnaturę `upsert_prices(session, instrument_id, bars, source)`, ale A3
+zakazuje `datetime.now()` poza `SystemClock`. Dodano opcjonalny parametr keyword-only
+`now: dt.datetime | None = None`: domyślnie `SystemClock().now()`, testy i wywołania z
+wstrzykiwanym zegarem przekazują jawną wartość. Sygnatura pozycyjna specyfikacji nie uległa
+zmianie.
+
+### D-010. Autogeneracja rewizji a typy własne (`DecimalStr`/`UtcDateTime`)
+Alembic renderuje typy spoza `sqlalchemy.*` jako w pełni kwalifikowane nazwy
+(`gpwbot.db.types.UtcDateTime()`) i NIE emituje dla nich importów. W wygenerowanej rewizji
+dodano ręcznie `import gpwbot.db.types`. Każda przyszła autogeneracja używająca typów własnych
+wymaga tej samej poprawki (albo zastąpienia w DDL przez `sa.String()`/`sa.DateTime()`, co jest
+równoważne, bo TypeDecorator kompiluje się do typu impl).
+
+### D-011. Ruff pomija katalog wygenerowanych rewizji
+`extend-exclude = ["src/gpwbot/db/migrations/versions"]` w `pyproject.toml`: styl kodu
+autogenerowanego przez Alembic nie podlega regułom projektu (E501, UP007 itd.). Pliki ręczne
+w `migrations/` (`env.py`, `script.py.mako`) są lintowane normalnie.
+
+### D-012. `pandas-stubs` jako zależność dev
+`repo.get_prices_df` zwraca DataFrame; aby utrzymać `mypy --strict` bez wyłączeń, dodano
+`pandas-stubs` do `[dev]` (analogicznie do istniejącego `types-PyYAML`).
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |

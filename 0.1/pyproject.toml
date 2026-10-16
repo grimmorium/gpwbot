@@ -35,6 +35,7 @@ dev = [
     "ruff",
     "mypy",
     "types-PyYAML",
+    "pandas-stubs",
 ]
 
 [project.scripts]
@@ -47,6 +48,8 @@ where = ["src"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests", "scripts"]
+# Rewizje Alembic są generowane automatycznie (styl nie podlega naszym regułom; D-011).
+extend-exclude = ["src/gpwbot/db/migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
