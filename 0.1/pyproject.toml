@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpwbot"
+version = "0.1.0"
+description = "Agent AI typujący akcje GPW (paper trading, lokalny LLM)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2",
+    "pyyaml",
+    "sqlalchemy>=2",
+    "alembic",
+    "httpx",
+    "tenacity",
+    "typer",
+    "structlog",
+    "pandas",
+    "numpy",
+    "exchange_calendars",
+    "rapidfuzz",
+    "feedparser",
+    "beautifulsoup4",
+    "jinja2",
+    "apscheduler",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "hypothesis",
+    "respx",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+]
+
+[project.scripts]
+gpwbot = "gpwbot.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not network and not llm_live'"
+markers = [
+    "unit: testy jednostkowe (domyślne)",
+    "integration: testy integracyjne",
+    "network: prawdziwe zapytania HTTP (pomiń domyślnie)",
+    "llm_live: prawdziwy serwer LLM (pomiń domyślnie)",
+]

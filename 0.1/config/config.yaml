@@ -1,0 +1,87 @@
+# gpwbot — przykładowa konfiguracja (wartości z Części I sekcji 2 i 5).
+# Ścieżki względne są rozwiązywane względem katalogu tego pliku.
+
+timezone: Europe/Warsaw
+
+paths:
+  db_path: data/gpwbot.db
+  data_dir: data
+  raw_dir: data/raw
+  reports_dir: reports
+
+market:
+  preopen_start: "08:00"
+  preopen_end: "09:00"
+  continuous_start: "09:00"
+  continuous_end: "16:50"
+  close_auction_start: "16:50"
+  close_auction_end: "17:00"
+  settlement_days: 2
+  settle_instantly: false
+  price_limit_pct: 10
+
+portfolio:
+  initial_cash_pln: 100000
+  benchmarks: [wig, wig20]
+  portfolios:
+    - id: llm_agent
+      strategy: llm
+    - id: baseline_momentum
+      strategy: momentum
+
+universe:
+  indices: [wig20, mwig40]
+  min_avg_turnover_pln_20d: 500000
+  min_price_pln: 1
+  exclude_tickers: []
+
+runs:
+  - name: morning
+    hour: 8
+    minute: 15
+  - name: evening
+    hour: 17
+    minute: 30
+
+llm:
+  base_url: http://localhost:8080/v1
+  temperature: 0.2
+  max_prompt_tokens: 6000
+  samples_per_decision: 1
+  thinking_extraction: false
+  thinking_decision: true
+
+risk:
+  max_position_pct: 10
+  max_positions: 10
+  min_cash_pct: 10
+  max_sector_pct: 30
+  max_daily_turnover_pct: 30
+  min_trade_value_pln: 2000
+  max_adv_participation_pct: 5
+  stop_atr_mult: 2.5
+  min_holding_sessions: 3
+  cooldown_after_sell_sessions: 5
+  kill_switch_drawdown_pct: 15
+
+costs:
+  commission_pct: 0.30
+  commission_min_pln: 5
+  slippage_bps: 15
+
+# Sekcje placeholder — pola rozszerzane w sesjach S05/S09/S10–S12/S14 (decyzja D-001).
+screener:
+  top_n: 25
+  max_total: 40
+  materiality_threshold: 0.6
+
+baseline:
+  top_k: 10
+  rebalance_sessions: 5
+
+text:
+  dedupe_similarity: 92
+  extraction_temperature: 0.0
+
+eval:
+  min_forward_days: 90

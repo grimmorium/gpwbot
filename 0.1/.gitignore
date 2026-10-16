@@ -1,0 +1,25 @@
+# środowisko i instalacja
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# dane (poza gitem) — Część I sekcja 4
+data/raw/
+data/*.db
+data/*.db-*
+reports/
+
+# narzędzia jakości i testy
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# środowisko
+.env
