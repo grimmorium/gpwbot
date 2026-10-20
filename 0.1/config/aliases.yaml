@@ -1,0 +1,34 @@
+# Słownik aliasów do linkowania tekstów (S04; używany w S10).
+#
+# Reguły walidacji (aliases.load_aliases):
+# - ten sam alias przypisany do >1 tickera wymaga `ambiguous: true`
+#   we wszystkich wpisach z tym aliasem;
+# - aliasy krótsze niż 4 znaki wymagają `exact_case: true`.
+#
+# Dane niezweryfikowane (V-05): nazwy/odmiany do rozbudowy o polskie odmiany
+# i skróty po domknięciu składu indeksów.
+
+aliases:
+  - alias: Orlen
+    tickers: [PKNORLEN]
+  - alias: PKN Orlen
+    tickers: [PKNORLEN]
+  - alias: CD Projekt
+    tickers: [CDPROJEKT]
+  - alias: CDR
+    tickers: [CDPROJEKT]
+    exact_case: true   # wymagane — alias krótszy niż 4 znaki
+  - alias: PKO BP
+    tickers: [PKOBP]
+  - alias: Bank Pekao
+    tickers: [PEKAO]
+  - alias: Dino Polska
+    tickers: [DINOPL]
+  - alias: Żabka
+    tickers: [ZABKA]
+  - alias: Allegro
+    tickers: [ALLEGRO]
+  - alias: Tauron
+    tickers: [TAURONPE]
+  - alias: 11 bit
+    tickers: [B1S]

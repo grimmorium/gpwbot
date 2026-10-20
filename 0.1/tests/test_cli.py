@@ -1,17 +1,22 @@
-"""Testy CLI (S00): --help, version, doctor, stuby; S01: db upgrade; S03: ingest."""
+"""Testy CLI (S00): --help, version, doctor, stuby; S01: db upgrade; S03: ingest; S04: universe."""
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
+from sqlalchemy import create_engine
 from typer.testing import CliRunner
 
 from gpwbot.cli import app
 from gpwbot.db.migrate import upgrade_to_head
+from gpwbot.db.repo import InstrumentUpsert, PriceBar, upsert_instruments, upsert_prices
+from gpwbot.db.session import make_session_factory, session_scope, sqlite_url
 
 runner = CliRunner()
 
@@ -19,7 +24,16 @@ runner = CliRunner()
 def test_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("version", "doctor", "ingest", "backfill-prices", "run", "replay", "report"):
+    for command in (
+        "version",
+        "doctor",
+        "ingest",
+        "backfill-prices",
+        "universe",
+        "run",
+        "replay",
+        "report",
+    ):
         assert command in result.output
 
 
@@ -174,4 +188,87 @@ def test_backfill_prices_bad_config_returns_1(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("paths:\n  db_path: x\n", encoding="utf-8")
     result = runner.invoke(app, ["--config", str(bad), "backfill-prices"])
+    assert result.exit_code == 1
+
+
+# --- S04: universe ------------------------------------------------------------
+
+
+def _write_universe_env(tmp_path: Path) -> tuple[Path, Path]:
+    """Konfiguracja + seed pod tmp CWD; baza migracyjnie gotowa."""
+    db_file = tmp_path / "data" / "gpwbot.db"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "universe_seed.yaml").write_text(
+        "- ticker: AAA\n  indices: [wig20]\n- ticker: BBB\n  indices: [wig20]\n",
+        encoding="utf-8",
+    )
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "paths:\n"
+        f"  db_path: {db_file.as_posix()}\n"
+        f"  data_dir: {(tmp_path / 'data').as_posix()}\n"
+        f"  raw_dir: {(tmp_path / 'raw').as_posix()}\n"
+        f"  reports_dir: {(tmp_path / 'reports').as_posix()}\n"
+        "universe:\n"
+        "  indices: [wig20]\n"
+        "  min_avg_turnover_pln_20d: 100\n"
+        "  min_history_sessions: 3\n",
+        encoding="utf-8",
+    )
+    upgrade_to_head(db_file)
+    return config_file, db_file
+
+
+def _seed_prices_for_cli(db_file: Path) -> None:
+    """Dobre ceny AAA (3 sesje do 2026-10-15); BBB bez danych."""
+    engine = create_engine(sqlite_url(db_file))
+    factory = make_session_factory(engine)
+    try:
+        with session_scope(factory) as s:
+            (inst,) = upsert_instruments(
+                s, [InstrumentUpsert(ticker="AAA", index_membership=["wig20"])]
+            )
+            bars = [
+                PriceBar(
+                    date=d,
+                    open=Decimal("10"),
+                    high=Decimal("10"),
+                    low=Decimal("10"),
+                    close=Decimal("10"),
+                    volume=1000,
+                    turnover_pln=Decimal("1000"),
+                )
+                for d in (dt.date(2026, 10, 13), dt.date(2026, 10, 14), dt.date(2026, 10, 15))
+            ]
+            ts_now = dt.datetime(2026, 10, 15, 21, tzinfo=dt.UTC)
+            upsert_prices(s, inst.id, bars, "test", now=ts_now)
+    finally:
+        engine.dispose()
+
+
+def test_universe_wypisuje_członków_i_powody(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Akceptacja S04: `gpwbot universe --as-of DATA` wypisuje członków i powody."""
+    config_file, db_file = _write_universe_env(tmp_path)
+    _seed_prices_for_cli(db_file)
+
+    monkeypatch.chdir(tmp_path)  # odwracane automatycznie po teście (chdir nie zwraca CM)
+    result = runner.invoke(app, ["--config", str(config_file), "universe", "--as-of", "2026-10-15"])
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "członkowie (1):" in out
+    assert "AAA" in out
+    assert "wykluczeni (1):" in out
+    assert "BBB: short_history" in out
+
+
+def test_universe_bad_as_of_returns_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_file, _ = _write_universe_env(tmp_path)
+
+    monkeypatch.chdir(tmp_path)  # odwracane automatycznie po teście (chdir nie zwraca CM)
+    result = runner.invoke(app, ["--config", str(config_file), "universe", "--as-of", "abc"])
+
     assert result.exit_code == 1

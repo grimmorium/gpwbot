@@ -79,6 +79,8 @@ class PortfolioCfg(_Cfg):
 class UniverseCfg(_Cfg):
     indices: list[str] = ["wig20", "mwig40"]
     min_avg_turnover_pln_20d: Decimal = Field(default=Decimal("500000"), ge=0)
+    # Minimum sesji historii (Część I sekcja 8); dodane w S04 — D-027.
+    min_history_sessions: int = Field(default=250, gt=0)
     min_price_pln: Decimal = Field(default=Decimal("1"), gt=0)
     exclude_tickers: list[str] = []
 

@@ -13,6 +13,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 import typer
+from sqlalchemy.exc import SQLAlchemyError
 
 from gpwbot import __version__
 from gpwbot.clock import SystemClock
@@ -26,6 +27,7 @@ from gpwbot.ingest.prices_job import (
     default_price_tickers,
     ingest_prices,
 )
+from gpwbot.universe import get_universe, sync_instruments
 
 WARSAW = ZoneInfo("Europe/Warsaw")
 
@@ -154,6 +156,57 @@ def backfill(
         typer.echo(f"błąd: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     _print_report("backfill prices", report)
+
+
+def _parse_as_of(value: str) -> dt.datetime:
+    """`--as-of`: data (→ koniec sesji w Warszawie) albo ISO datetime.
+
+    Daty bez strefy traktowane jako Europe/Warsaw; błędny kształt → `ConfigError`.
+    """
+    v = value.strip()
+    try:
+        if len(v) == 10 and "T" not in v:
+            d = dt.date.fromisoformat(v)
+            return dt.datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=WARSAW)
+        parsed = dt.datetime.fromisoformat(v)
+    except ValueError as exc:
+        raise ConfigError(f"--as-of: nieprawidłowy format ISO ({value!r})") from exc
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        return parsed.replace(tzinfo=WARSAW)
+    return parsed
+
+
+@app.command()
+def universe(
+    ctx: typer.Context,
+    as_of: Annotated[
+        str,
+        typer.Option("--as-of", help="Chwiel T (data YYYY-MM-DD lub ISO datetime)."),
+    ] = "",
+) -> None:
+    """Wypisuje członków universe i powody wykluczeń; najpierw sync seedu."""
+    try:
+        context = build_context(_config_path(ctx))
+        ts = _parse_as_of(as_of) if as_of else SystemClock().now()
+    except ConfigError as exc:
+        typer.echo(f"błąd konfiguracji: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        sync_report = sync_instruments(context)
+        result = get_universe(context, ts)
+    except (ConfigError, GpwbotError, SQLAlchemyError) as exc:
+        typer.echo(f"błąd: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"as_of: {ts.isoformat()}")
+    typer.echo(f"sync seedu: synced={sync_report.synced} deactivated={sync_report.deactivated}")
+    typer.echo(f"członkowie ({len(result.members)}):")
+    for ticker in result.members:
+        typer.echo(f"  {ticker}")
+    typer.echo(f"wykluczeni ({len(result.excluded)}):")
+    for ticker, reason in result.excluded.items():
+        typer.echo(f"  {ticker}: {reason.value}")
 
 
 @app.command()

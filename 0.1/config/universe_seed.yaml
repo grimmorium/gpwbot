@@ -1,0 +1,320 @@
+# Seed instrumentów universe (S04): skład WIG20 + mWIG40.
+#
+# UWAGA — DANE DO WERYFIKACJI (V-05, docs/decisions.md):
+# - Tickery WIG20: sekcja "Mapa wartości spółek z WIG20" na stronie głównej gpw.pl
+#   (dostęp 2026-10-20). Część symboli odbiega od znanych mi nazw (np. TAURONPE,
+#   MODIVO, KETY, ALIOR) — możliwe zmiany tickerów po 2025 lub błąd ekstrakcji;
+#   zweryfikować przed startem forward testu.
+# - mWIG40: lista NAZW spółek z pl.wikipedia.org/wiki/mWIG40 (dostęp 2026-10-20);
+#   tickery to mapowanie agenta — niezweryfikowane. Spółki bez pewnego tickera
+#   pominięte (do uzupełnienia): Asbis, Benefit Systems, cyber_Folks, Grenevia,
+#   Grupa Pracuj, Huuuge Games, Mo-Bruk, Ten Square Games, Text. Tauron figuruje
+#   w WIG20 (wg gpw.pl; zmiana składu 2026-03-20 wg historii na Wikipedii).
+# - isin/sector: puste lub przybliżone — do uzupełnienia z oficjalnego źródła.
+#
+# Format wpisu: ticker, isin?, name?, segment?, sector?, indices (wig20/mwig40),
+# tick_group, aliases?
+
+- ticker: TAURONPE
+  name: Tauron Polska Energia S.A.
+  segment: GPW
+  sector: energia
+  indices: [wig20]
+  tick_group: default
+  aliases: [Tauron]
+- ticker: MODIVO
+  # nazwa spółki do uzupełnienia (V-05)
+  segment: GPW
+  indices: [wig20]
+  tick_group: default
+- ticker: PGE
+  name: Polska Grupa Energetyczna S.A.
+  segment: GPW
+  sector: energia
+  indices: [wig20]
+  tick_group: default
+- ticker: CDPROJEKT
+  name: CD Projekt S.A.
+  segment: GPW
+  sector: technologia
+  indices: [wig20]
+  tick_group: default
+  aliases: [CD Projekt, CDR]
+- ticker: LPP
+  name: LPP S.A.
+  segment: GPW
+  sector: handel detaliczny
+  indices: [wig20]
+  tick_group: default
+- ticker: DINOPL
+  name: Dino Polska S.A.
+  segment: GPW
+  sector: handel detaliczny
+  indices: [wig20]
+  tick_group: default
+  aliases: [Dino Polska]
+- ticker: ALLEGRO
+  name: Allegro
+  segment: GPW
+  sector: technologia
+  indices: [wig20]
+  tick_group: default
+  aliases: [Allegro]
+- ticker: KRUK
+  name: Kruk S.A.
+  segment: GPW
+  sector: finanse
+  indices: [wig20]
+  tick_group: default
+- ticker: ZABKA
+  name: Żabka Group S.A.
+  segment: GPW
+  sector: handel detaliczny
+  indices: [wig20]
+  tick_group: default
+  aliases: [Żabka]
+- ticker: PKNORLEN
+  name: Orlen S.A. (PKN Orlen)
+  segment: GPW
+  sector: paliwa i energia
+  indices: [wig20]
+  tick_group: default
+  aliases: [Orlen, PKN Orlen]
+- ticker: KETY
+  # nazwa spółki do uzupełnienia (V-05)
+  segment: GPW
+  indices: [wig20]
+  tick_group: default
+- ticker: MBANK
+  name: mBank S.A.
+  segment: GPW
+  sector: finanse
+  indices: [wig20]
+  tick_group: default
+- ticker: BUDIMEX
+  name: Budimex S.A.
+  segment: GPW
+  sector: budownictwo
+  indices: [wig20]
+  tick_group: default
+- ticker: PZU
+  name: PZU S.A.
+  segment: GPW
+  sector: ubezpieczenia
+  indices: [wig20]
+  tick_group: default
+- ticker: ALIOR
+  # nazwa spółki do uzupełnienia (V-05)
+  segment: GPW
+  indices: [wig20]
+  tick_group: default
+- ticker: ERSTEPL
+  # nazwa spółki do uzupełnienia (V-05)
+  segment: GPW
+  sector: finanse
+  indices: [wig20]
+  tick_group: default
+- ticker: PKOBP
+  name: PKO Bank Polski S.A.
+  segment: GPW
+  sector: finanse
+  indices: [wig20]
+  tick_group: default
+  aliases: [PKO BP]
+- ticker: PEKAO
+  name: Bank Pekao S.A.
+  segment: GPW
+  sector: finanse
+  indices: [wig20]
+  tick_group: default
+  aliases: [Bank Pekao]
+- ticker: KGHM
+  name: KGHM Polska Miedź S.A.
+  segment: GPW
+  sector: górnictwo i metale
+  indices: [wig20]
+  tick_group: default
+- ticker: PEPCO
+  # nazwa spółki do uzupełnienia (V-05)
+  segment: GPW
+  sector: energia
+  indices: [wig20]
+  tick_group: default
+
+# --- mWIG40 (tickery = mapowanie agenta, V-05; patrz nagłówek pliku) ---------
+
+- ticker: B1S
+  name: 11 bit studios S.A.
+  segment: GPW
+  sector: technologia
+  indices: [mwig40]
+  tick_group: default
+  aliases: [11 bit]
+- ticker: AWR
+  name: AmRest
+  segment: GPW
+  sector: usługi
+  indices: [mwig40]
+  tick_group: default
+- ticker: AUT
+  name: Autopart S.A.
+  segment: GPW
+  sector: przemysł
+  indices: [mwig40]
+  tick_group: default
+- ticker: BHK
+  name: Bank Handlowy S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default
+- ticker: BML
+  name: Biomed-Lublin Wytwórnia Surowic i Szczepionek S.A.
+  segment: GPW
+  sector: farmacja i zdrowie
+  indices: [mwig40]
+  tick_group: default
+- ticker: BNP
+  name: BNP Paribas Bank Polska S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default
+- ticker: BUM
+  name: Bumech S.A.
+  segment: GPW
+  sector: przemysł
+  indices: [mwig40]
+  tick_group: default
+- ticker: CCC
+  name: CCC S.A.
+  segment: GPW
+  sector: handel detaliczny
+  indices: [mwig40]
+  tick_group: default
+- ticker: CMR
+  name: Comarch S.A.
+  segment: GPW
+  sector: technologia
+  indices: [mwig40]
+  tick_group: default
+- ticker: DEV
+  name: Develia S.A.
+  segment: GPW
+  sector: budownictwo
+  indices: [mwig40]
+  tick_group: default
+- ticker: DDP
+  name: Dom Development S.A.
+  segment: GPW
+  sector: budownictwo
+  indices: [mwig40]
+  tick_group: default
+- ticker: AZO
+  name: Grupa Azoty S.A.
+  segment: GPW
+  sector: przemysł
+  indices: [mwig40]
+  tick_group: default
+- ticker: ENA
+  name: Enea S.A.
+  segment: GPW
+  sector: energia
+  indices: [mwig40]
+  tick_group: default
+- ticker: EUCC
+  name: Eurocash S.A.
+  segment: GPW
+  sector: handel detaliczny
+  indices: [mwig40]
+  tick_group: default
+- ticker: GPW
+  name: Giełda Papierów Wartościowych w Warszawie S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default
+- ticker: ING
+  name: ING Bank Śląski S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default
+- ticker: IPC
+  name: Inter Cars S.A.
+  segment: GPW
+  sector: przemysł
+  indices: [mwig40]
+  tick_group: default
+- ticker: KRN
+  name: Kernel Holding S.A.
+  segment: GPW
+  sector: technologia
+  indices: [mwig40]
+  tick_group: default
+- ticker: BGD
+  name: Lubelski Węgiel "Bogdanka" S.A.
+  segment: GPW
+  sector: górnictwo i metale
+  indices: [mwig40]
+  tick_group: default
+- ticker: MAB
+  name: Mabion S.A.
+  segment: GPW
+  sector: farmacja i zdrowie
+  indices: [mwig40]
+  tick_group: default
+- ticker: MLP
+  name: Millennium S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default
+- ticker: NCT
+  name: Neuca S.A.
+  segment: GPW
+  sector: farmacja i zdrowie
+  indices: [mwig40]
+  tick_group: default
+- ticker: PLE
+  name: Polenergia S.A.
+  segment: GPW
+  sector: energia
+  indices: [mwig40]
+  tick_group: default
+- ticker: PMO
+  name: Polimex Mostostal S.A.
+  segment: GPW
+  sector: budownictwo
+  indices: [mwig40]
+  tick_group: default
+- ticker: PCO
+  name: PKP Cargo S.A.
+  segment: GPW
+  sector: przemysł
+  indices: [mwig40]
+  tick_group: default
+- ticker: SEL
+  name: Selvita S.A.
+  segment: GPW
+  sector: farmacja i zdrowie
+  indices: [mwig40]
+  tick_group: default
+- ticker: STS
+  name: STS Holding S.A.
+  segment: GPW
+  sector: usługi
+  indices: [mwig40]
+  tick_group: default
+- ticker: WPL
+  name: Wirtualna Polska Media S.A.
+  segment: GPW
+  sector: technologia
+  indices: [mwig40]
+  tick_group: default
+- ticker: XTB
+  name: XTB S.A.
+  segment: GPW
+  sector: finanse
+  indices: [mwig40]
+  tick_group: default

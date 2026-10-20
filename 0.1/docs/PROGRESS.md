@@ -10,7 +10,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | S01 | Baza danych i migracje | done | db/{types,models,session,repo,migrate}.py + Alembic (rewizja initial), CLI `db upgrade`, fixture `tmp_db`; 97 testów zielone, pokrycie 98% (moduły db ≥ 92%) |
 | S02 | Kalendarz GPW, tick size, koszty | done | calendar/ticks/costs + config/{tick_sizes,gpw_holidays_override}.yaml; 190 testów zielone (93 nowe), pokrycie modułów ≥ 95%; godziny sesji zweryfikowane wg SZOG (preopen 8:30); ticki przykładowe (V-02) |
 | S03 | Ceny: Stooq, jakość danych, ingest | done | providers/{base,prices_stooq,prices_yfinance}, quality, ingest/prices_job + config/symbol_map.yaml; 279 testów zielone (89 nowych), pokrycie modułów ≥ 90%; retry/limiter z configu; V-03 częściowo domknięte (wzorzec URL do weryfikacji — test @network) |
-| S04 | Universe, instrumenty, aliasy | todo | zależy od: S01, S03 |
+| S04 | Universe, instrumenty, aliasy | done | universe.py (sync seedu + filtry), aliases.py (walidacja), config/{universe_seed,aliases}.yaml, CLI `universe --as-of`; 312 testów zielone (33 nowe); seed WIG20/mWIG40 do weryfikacji (V-05); SUSPENDED = heurystyka zerowej świecy (D-028/V-06) |
 | S05 | Wskaźniki i screener | todo | zależy od: S04 |
 | S06 | Ledger, pozycje, partie FIFO | todo | zależy od: S01, S02 |
 | S07 | Symulator wykonania | todo | zależy od: S02, S06 |
@@ -40,7 +40,10 @@ zmiana sygnatury, planowana od S00), D-022 (`PriceBar.turnover_pln` poza listą 
 D-023 (próg 25% jako stała `quality.LARGE_CHANGE_PCT`), D-024 (parser: nagłówki PL/EN + heurystyka
 przecinka dziesiętnego; format Stooq do weryfikacji V-03), D-025 (retry 5xx/timeouty, 4xx bez
 ponawiania; ścieżka mapy symboli względem CWD), D-026 (`default_price_tickers` = indeksy ∪ benchmarki
-przed S04).
+przed S04). Z S04: D-027 (`UniverseCfg.min_history_sessions = 250` — nowe pole konfiguracji),
+D-028 (SUSPENDED = heurystyka zerowej świecy; V-06 otwarte), D-029 (kolejność filtrów
+`get_universe`; brak cen = SHORT_HISTORY; `exclude_tickers` poza kandydatami), D-030 (schemat i
+walidacja `aliases.yaml` oraz seedu), D-031 (`ExclusionReason` jako `StrEnum`, ruff UP042).
 
 ## Dług techniczny
 
@@ -52,7 +55,13 @@ przed S04).
 - Adapter yfinance nie jest podpięty jako automatyczny fallback ingestu (S03: samodzielny
   adapter za flagą); decyzja o fallbackie — przy S15/operacyjności albo wcześniej, gdy Stooq
   okaże się niedostępny.
-- `default_price_tickers` (indeksy ∪ benchmarki) do wymiany na rozszerzenie universe w S04 (D-026).
+- `default_price_tickers` (indeksy ∪ benchmarki; D-026) nie został podpięty do tickerów z
+  `config/universe_seed.yaml` — S04 zostawił sygnaturę i testy S03 nietknięte. Następny krok:
+  wymiana na tickery seedu (z fallbackiem), zanim start forward testu; bez tego ingest/backfill
+  pobiera tylko indeksy, a universe nie ma danych cen spółek.
+- `sync_instruments` dezaktwyzuje też wiersze instrumentów spoza seedu tworzone przez ingest
+  (np. indeksy WIG/WIG20) — celowe wg specyfikacji ("usunięty z seedu = active=false"), ale do
+  przejrzenia, gdy pojawią się inne źródła wierszy `instruments`.
 - CLI `ingest` bez `--prices` to nadal stub (teksty — S10); kody wyjścia: częściowa awaria
   tickerów nie zmienia kodu 0 (widoczne w raporcie na stdout).
 - `upsert_instruments` robi select+update per ticker (nie batch upsert); przy dziesiątkach
@@ -66,6 +75,15 @@ przed S04).
 
 ## Pytania otwarte
 
+- V-05: skład indeksów w `config/universe_seed.yaml` — tickery WIG20 pobrane z sekcji "Mapa
+  wartości spółek z WIG20" na gpw.pl (dostęp 2026-10-20), ale część symboli odbiega od znanych mi
+  nazw (TAURONPE, MODIVO, KETY, ALIOR — możliwe zmiany tickerów po 2025 lub błąd ekstrakcji);
+  mWIG40: tickery to mapowanie agenta z listy nazw (pl.wikipedia.org), 9 spółek pominiętych
+  (brak pewnego tickera). Proszę o weryfikację składu przed startem forward testu.
+- V-06: czy heurystyka SUSPENDED (ostatnia świeca volume=0 i bez obrotu; D-028) jest wystarczająca,
+  czy podpiąć oficjalne źródło zawieszeń notowań GPW?
+- Podłączenie ingest/backfill do tickerów z seedu (dług techniczny, D-026): zrobić teraz jako
+  osobny krok operacyjny, czy zostawić przed startem forward testu?
 - V-03 (reszta): wzorzec URL Stooq (`https://stooq.pl/q/d/l/?s=…&i=d&d1=…&d2=…`) i symbole indeksów
   w `config/symbol_map.yaml` są do weryfikacji na żywej odpowiedzi — brak dostępu do sieci w trakcie
   S03. Proszę o uruchomienie `pytest -m network tests/providers/` (jedno zapytanie dla PKN) lub

@@ -32,7 +32,8 @@ portfolio:
 
 universe:
   indices: [wig20, mwig40]
-  min_avg_turnover_pln_20d: 500000
+  min_avg_turnover_pln_20d: 500000   # średni obrót 20 sesji (Część I sekcja 8)
+  min_history_sessions: 250         # minimum sesji historii (S04, D-027)
   min_price_pln: 1
   exclude_tickers: []
 

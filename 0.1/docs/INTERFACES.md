@@ -255,3 +255,55 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
 - `gpwbot ingest --prices [--since Nd]` — ingest cen ze Stooq dla tickerów z konfiguracji;
   kod 1 przy błędzie konfiguracji/kształtu `--since`; bez `--prices` nadal stub (kod 2).
 - `gpwbot backfill-prices --years N` — backfill partiami rocznymi.
+
+## S04
+
+### `gpwbot.universe`
+
+- `ExclusionReason` — `StrEnum`: `INACTIVE`, `SUSPENDED`, `LOW_TURNOVER`, `LOW_PRICE`,
+  `SHORT_HISTORY`, `NEEDS_REVIEW`, `STALE`; wartości to małe litery (`"inactive"` itd.) (D-031).
+- `SeedInstrument(ticker, isin=None, name=None, segment=None, sector=None, indices=(),
+  tick_group="default", aliases=())` — frozen dataclass; wpisu pliku seedu.
+- `SyncReport(synced, deactivated)` — frozen dataclass; wynik syncu.
+- `UniverseResult(members: tuple[str, ...], excluded: dict[str, ExclusionReason])` — frozen
+  dataclass; członkowie i wykluczenia posortowane po tickerze (deterministyczne).
+- `DEFAULT_SEED_PATH = Path("config/universe_seed.yaml")` — względem CWD (wzorzec D-017/D-025);
+  `TURNOVER_WINDOW_SESSIONS = 20`.
+- `load_seed(path) -> list[SeedInstrument]` — walidacja pliku seedu (lista map; tickery →
+  uppercase, indeksy → lowercase; duplikaty tickerów i nieznane klucze → `ConfigError`);
+  brak pliku = błąd (D-030).
+- `sync_instruments(ctx, seed_path=DEFAULT_SEED_PATH) -> SyncReport` — upsert seedu do tabeli
+  `instruments` (`active=true`) + `active=false` dla istniejących instrumentów spoza seedu
+  (bez kasowania); idempotentne.
+- `get_universe(ctx, as_of: dt.datetime) -> UniverseResult` — członkowie i powody wykluczeń;
+  kandydaci = `index_membership ∩ cfg.universe.indices`, poza `exclude_tickers`; dane tylko o
+  dacie ≤ `as_of` (bez look-ahead). Kolejność filtrów (pierwszy trafiony): INACTIVE → SUSPENDED
+  (ostatnia świeca: volume=0 i obrót None/≤0; D-028) → STALE (`quality.is_fresh`) → SHORT_HISTORY
+  (< `min_history_sessions`; brak cen = ten powód) → LOW_TURNOVER (średnia obrotu ostatnich 20
+  barów < próg, Decimal) → LOW_PRICE (ostatnie close < `min_price_pln`) → NEEDS_REVIEW (dowolna
+  świeca z flagą). Naive `as_of` → `ValueError`.
+
+### `gpwbot.aliases`
+
+- `AliasEntry(alias, tickers: tuple[str, ...], ambiguous=False, exact_case=False)` — frozen
+  dataclass; tickery normalizowane do uppercase.
+- `MIN_ALIAS_LEN = 4`.
+- `load_aliases(path) -> list[AliasEntry]` — słownik aliasów z YAML (mapa z kluczem `aliases`;
+  wpis: `alias`, `tickers`, opcjonalnie `ambiguous`/`exact_case`). Walidacja (D-030): kolizja
+  aliasu (>1 ticker, w jednym lub między wpisami) wymaga `ambiguous: true` we wszystkich
+  wpisach z tym aliasem; alias < 4 znaków wymaga `exact_case: true`. Brak pliku = pusty słownik;
+  błędy schematu/walidacji → `ConfigError`.
+
+### Konfiguracja (rozszerzenie S04)
+
+- `UniverseCfg.min_history_sessions: int = 250` — minimum sesji historii (Część I sekcja 8);
+  dodane z domyślną wartością, jawnie w `config/config.yaml` (D-027).
+- Nowe pliki: `config/universe_seed.yaml` (skład WIG20/mWIG40 — dane do weryfikacji V-05),
+  `config/aliases.yaml` (słownik aliasów dla S10).
+
+### CLI (rozszerzenie S04)
+
+- `gpwbot universe [--as-of DATA]` — najpierw sync seedu, potem wypisuje członków i powody
+  wykluczeń; `--as-of`: data `YYYY-MM-DD` → koniec dnia sesji w Warszawie (23:59:59), ISO
+  datetime bez strefy → Warszawa; brak opcji → bieżący czas. Kod 1 przy błędzie konfiguracji,
+  kształtu `--as-of` lub bazy danych.

@@ -173,6 +173,50 @@ Sesja S03 nie ma jeszcze modułu universe (S04), więc CLI (`ingest --prices`,
 `universe.indices ∪ portfolio.benchmarks`. Po S04 lista będzie pochodzić z rozszerzenia
 universe — funkcja do usunięcia/wymiany.
 
+## Decyzje S04
+
+### D-027. `UniverseCfg.min_history_sessions = 250` (nowe pole konfiguracji)
+Część I sekcja 8 wymaga filtra "co najmniej 250 sesji historii", a zasady sesji nakazują, by
+limity pochodziły z konfiguracji, nie z kodu. Dodano `min_history_sessions: int = Field(
+default=250, gt=0)` do `UniverseCfg` (dodanie z domyślną wartością — bez zmiany istniejących
+sygnatur; wzorzec D-019) i jawnie w `config/config.yaml`.
+
+### D-028. Wykrywanie SUSPENDED ze świec dziennych (heurystyka, V-06)
+W v1 nie ma oficjalnego źródła zawieszeń notowań GPW, a model `Instrument` nie ma pola
+`suspended`, więc zawieszenie wykrywamy z danych cenowych: **ostatnia świeca (≤ as_of) ma
+`volume == 0` i `turnover_pln ∈ {None, ≤ 0}`**. Świeca z `volume = NULL` NIE oznacza
+zawieszenia (brak danych ≠ brak obrotów). Reguła sprawdzana przed STALE — świeca zerowa jest
+bardziej specyficznym sygnałem niż wiek danych. Do weryfikacji: oficjalne źródło zawieszeń
+(V-06); heurystyka do ewentualnej wymiany bez zmiany sygnatur `get_universe`.
+
+### D-029. Kolejność filtrów i przypadki brzegowe `get_universe`
+Pierwszy trafiony powód wygrywa: INACTIVE → SUSPENDED → STALE → SHORT_HISTORY → LOW_TURNOVER
+→ LOW_PRICE → NEEDS_REVIEW (kolejność w docstringu funkcji). Skutki:
+- brak jakichkolwiek cen ≤ as_of = `SHORT_HISTORY` (zero historii, nie STALE);
+- obrót 20-sesyjny = średnia z ostatnich 20 dostępnych barów (daty ≤ as_of), dni bez obrotu
+  liczone jako 0; porównanie w `Decimal` (granica == próg przechodzi);
+- przy wielu źródłach cen na tę samą datę liczony jest pierwszy wiersz po dacie
+  (w praktyce jedno źródło do czasu S15 — patrz dług techniczny);
+- `cfg.universe.exclude_tickers` nie są kandydatami w ogóle (nie pojawiają się ani w
+  `members`, ani w `excluded`) — specyfikacja zamyka zbiór powodów wykluczenia i nie ma
+  wartości "wykluczono ręcznie"; decyzja widoczna w samym pliku konfiguracji.
+
+### D-030. Schemat i walidacja `config/aliases.yaml`
+Wpis: `alias` (str) + `tickers` (niepusta lista str, normalizowane do uppercase) + opcjonalne
+`ambiguous`/`exact_case` (bool). Reguły: alias krótszy niż 4 znaki wymaga `exact_case: true`;
+ten sam alias (porównanie case-insensitive po trimie) przypisany do >1 tickera — w jednym
+wpisie lub między wpisami — wymaga `ambiguous: true` **we wszystkich** wpisach z tym aliasem
+(strict; jeden nieoznaczony wpis = błąd). Brak pliku = pusty słownik (wzorzec D-025); nieznane
+klucze i błędy schematu → `ConfigError`. Seed (`universe_seed.yaml`) ma osobny, prostszy
+schemat: lista map z kluczami `ticker/isin/name/segment/sector/indices/tick_group/aliases`;
+brak pliku seedu = błąd (sync z pustym seedem dezaktwyzowałby całą bazę).
+
+### D-031. `ExclusionReason` jako `StrEnum` (ruff UP042)
+Klasa dziedzicząca po `(str, Enum)` jest flagowana przez ruff (UP042); projekt wymaga Pythona
+3.11+, więc użyto `enum.StrEnum`. Semantyka zachowana: wartości to te same małe ciągi,
+porównania z literałami i `.value` działają identycznie; CLI wypisuje wyłącznie `.value`,
+więc różnice w formatowaniu członków nie wpływają na wyjście.
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |
@@ -181,3 +225,5 @@ universe — funkcja do usunięcia/wymiany.
 | V-02 | Tabela tick size (źródło: regulamin GPW) | S02 | częściowo domknięte — mechanizm zweryfikowany wg SZOG §70 (pasma płynności UE 2017/588 + cena; D-015); **wartości tabeli pozostają przykładowe** (EUR-Lex niedostępny w trakcie S02) |
 | V-03 | Dostępność, format i warunki użycia Stooq / yfinance / RSS / ESPI; czy ceny są skorygowane | S03 | częściowo domknięte — mechanizm zaimplementowany (parser PL/EN + przecinek dziesiętny, retry, limiter; D-024/D-025); **wzorzec URL i symbole indeksów niezweryfikowane** (brak dostępu do sieci w sesji) — test `@network` (`pytest -m network tests/providers/`) służy do domknięcia; warunki użycia Stooq/yfinance do potwierdzenia |
 | V-04 | Która flaga llama.cpp steruje trybem rozumowania Qwen (`enable_thinking`?) | S11 | otwarte — config ma `thinking_extraction`/`thinking_decision` |
+| V-05 | Skład WIG20/mWIG40 w `config/universe_seed.yaml` (tickery, nazwy, sektory) | S04 | częściowo domknięte — tickery WIG20 wg sekcji "Mapa wartości spółek z WIG20" na gpw.pl (dostęp 2026-10-20); mWIG40: nazwy wg pl.wikipedia.org, tickery = mapowanie agenta; część symboli WIG20 odbiega od znanych mi nazw (TAURONPE, MODIVO, KETY, ALIOR) — do weryfikacji przed startem forward testu |
+| V-06 | Oficjalne źródło zawieszeń notowań GPW vs heurystyka zerowej świecy (D-028) | S04 | otwarte — v1 wykrywa SUSPENDED z `volume == 0` i braku obrotu na ostatniej świecy; do podpięcia oficjalnego źródła, gdy będzie dostępne |
