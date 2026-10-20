@@ -130,11 +130,54 @@ Biblioteka nie ma stubów ani markera `py.typed`; dodano override per-moduł w `
 (analogicznie do podejścia z `pandas-stubs`, D-012 — tu bez pakietu stubów, bo API używane
 w S02 jest wąskie).
 
+## Decyzje S03
+
+### D-021. `AppContext` zyskuje pole `session_factory` (zmiana sygnatury)
+Planowane w PROGRESS.md od S00 ("naturalny moment: S03"). `build_context` tworzy fabrykę
+domyślnie (`create_engine_for` + `make_session_factory`) i akceptuje override
+`session_factory`. Jedyna konstrukcja bezpośrednia `AppContext(...)` była w samym
+`context.py`; testy korzystają z `build_context`, więc nic się nie łamie. Migracje NIE są
+stosowane przy budowie kontekstu — baza musi być gotowa (`gpwbot db upgrade`).
+
+### D-022. `providers.base.PriceBar` ma dodatkowe pole `turnover_pln`
+Specyfikacja S03 wymienia 7 pól baru źródłowego, ale wymaga też użycia obrotu podanego
+przez źródło ("jeśli źródło go nie podaje" → liczenie `close × volume`). Bez pola w barze
+dane z kolumny Turnover byłyby tracone. Pole opcjonalne (`None`), domyślne — sygnatura
+specyfikacji zachowana (wszystkie wymienione pola, w tej kolejności).
+
+### D-023. Próg skoku dziennego 25% jako stała `quality.LARGE_CHANGE_PCT`
+Specyfikacja S03/Część I sekcja 7 podaje wartość jawnie ("dzienna zmiana > 25%") — traktuję
+ją jako część algorytmu, nie parametr rynku (w odróżnieniu od limitów operacyjnych: limiter,
+retry, timeout → konfiguracja). Przeniesienie do config możliwe bez zmiany sygnatur
+(`check_bars` ma stałą domyślną w module).
+
+### D-024. Parser Stooq: nagłówki PL/EN i przecinek dziesiętny (heurystyka)
+Nagłówki mapowane przez tablicę aliasów (case-insensitive): EN `date/open/high/low/close/
+volume/turnover` + polskie odpowiedniki (`data/otwarcie/maksimum/minimum/zamknięcie/wolumen/
+obrót`). Przecinek jako separator dziesiętny obsługiwany dwojako: wartości zacytowane
+(`"98,50"`) przez `csv` + zamianę `,`→`.`; niezacytowane (wartość zajmuje kilka komórek) —
+łączeniem par czysto cyfrowych od lewej do dopasowania liczby kolumn. **Rzeczywisty kształt
+odpowiedzi Stooq pozostaje do weryfikacji (V-03)**; test `@network` służy do jej sprawdzenia.
+
+### D-025. Retry i operacyjne detale providera Stooq
+Ponawiane wyłącznie 5xx i timeouty (`tenacity`, wykładniczy backoff, mnożnik z configu);
+4xx → natychmiast `ProviderError` bez ponawiania; inne błędy httpx (np. `ConnectError`) —
+bez ponawiania wg specyfikacji. Po wyczerpaniu prób: `ProviderError("… N nieudanych prób …")`.
+Limiter zapytań to klasa `RateLimiter` (monotoniczny zegar, `time.sleep`). Ścieżka mapy
+symboli domyślnie `config/symbol_map.yaml` względem CWD (wzorzec D-017); testy i CLI przekazują
+jawnie albo działają z roota projektu.
+
+### D-026. Lista tickerów cen przed S04: `default_price_tickers` = indeksy ∪ benchmarki
+Sesja S03 nie ma jeszcze modułu universe (S04), więc CLI (`ingest --prices`,
+`backfill-prices`) i domyślny `backfill_prices(ctx, years)` pobierają tickery z konfiguracji:
+`universe.indices ∪ portfolio.benchmarks`. Po S04 lista będzie pochodzić z rozszerzenia
+universe — funkcja do usunięcia/wymiany.
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |
 | --- | --- | --- | --- |
 | V-01 | Aktualne godziny sesji GPW, widełki wahań, T+2 vs T+1 (regulaminy GPW/KDPW) | S02 | częściowo domknięte — godziny zweryfikowane wg SZOG §5(1)(1), `preopen_start` skorygowane na 8:30 (D-014); widełki statyczne WIG20/mWIG40/inne = ±30/±15/±10% od kursu odniesienia wg przedziału ceny (SZOG §71) — płaska wartość `price_limit_pct: 10` w config to uproszczenie do walidacji limitów; **T+2 vs T+1 pozostaje otwarte** |
 | V-02 | Tabela tick size (źródło: regulamin GPW) | S02 | częściowo domknięte — mechanizm zweryfikowany wg SZOG §70 (pasma płynności UE 2017/588 + cena; D-015); **wartości tabeli pozostają przykładowe** (EUR-Lex niedostępny w trakcie S02) |
-| V-03 | Dostępność, format i warunki użycia Stooq / yfinance / RSS / ESPI; czy ceny są skorygowane | S03 | otwarte |
+| V-03 | Dostępność, format i warunki użycia Stooq / yfinance / RSS / ESPI; czy ceny są skorygowane | S03 | częściowo domknięte — mechanizm zaimplementowany (parser PL/EN + przecinek dziesiętny, retry, limiter; D-024/D-025); **wzorzec URL i symbole indeksów niezweryfikowane** (brak dostępu do sieci w sesji) — test `@network` (`pytest -m network tests/providers/`) służy do domknięcia; warunki użycia Stooq/yfinance do potwierdzenia |
 | V-04 | Która flaga llama.cpp steruje trybem rozumowania Qwen (`enable_thinking`?) | S11 | otwarte — config ma `thinking_extraction`/`thinking_decision` |

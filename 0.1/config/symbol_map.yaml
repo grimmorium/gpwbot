@@ -1,0 +1,11 @@
+# Nadpisywania symboli Stooq (S03): ticker GPW → symbol w URL pobierania.
+# Domyślnie symbol = ticker małymi literami; wpis poniżej nadpisuje mapping.
+# Klucze porównywane bez względu na wielkość liter.
+#
+# UWAGA: symbole indeksów są do weryfikacji na żywej odpowiedzi (V-03) —
+# czy Stooq używa "wig20" czy innej formy (np. z prefiksem)? Wartości poniżej
+# są najbardziej prawdopodobne, ale niepotwierdzone.
+WIG: wig
+WIG20: wig20
+MWIG40: mwig40
+SWIG80: swig80

@@ -6,15 +6,28 @@ Jedyne miejsce dozwolone na `print`/echo (A3).
 
 from __future__ import annotations
 
+import datetime as dt
+import re
 from pathlib import Path
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import typer
 
 from gpwbot import __version__
+from gpwbot.clock import SystemClock
 from gpwbot.config import load_config
+from gpwbot.context import build_context
 from gpwbot.db.migrate import upgrade_to_head
-from gpwbot.errors import ConfigError
+from gpwbot.errors import ConfigError, GpwbotError
+from gpwbot.ingest.prices_job import (
+    IngestReport,
+    backfill_prices,
+    default_price_tickers,
+    ingest_prices,
+)
+
+WARSAW = ZoneInfo("Europe/Warsaw")
 
 app = typer.Typer(
     name="gpwbot",
@@ -78,20 +91,69 @@ def _not_implemented(name: str) -> None:
     raise typer.Exit(code=2)
 
 
+def _parse_since(value: str, end: dt.date) -> dt.date:
+    """`Nd` (dni kalendarzowe) → data początkowa; inny kształt to `ConfigError`."""
+    match = re.fullmatch(r"(\d+)d", value.strip())
+    if match is None or int(match.group(1)) < 1:
+        raise ConfigError(f"--since musi mieć postać Nd (dni), otrzymano {value!r}")
+    return end - dt.timedelta(days=int(match.group(1)))
+
+
+def _print_report(title: str, report: IngestReport) -> None:
+    typer.echo(f"{title}: {report.start.isoformat()}..{report.end.isoformat()}")
+    for result in report.results:
+        if result.ok:
+            extra = f" problemy_jakosci={len(result.issues)}" if result.issues else ""
+            typer.echo(f"OK: {result.ticker} (bars={result.bars_upserted}{extra})")
+        else:
+            typer.echo(f"BŁĄD: {result.ticker} — {result.error}")
+    failed = len(report.failed_tickers)
+    typer.echo(
+        f"razem: upserted={report.total_bars_upserted} issues={report.total_issues} failed={failed}"
+    )
+
+
 @app.command()
 def ingest(
-    since: Annotated[str, typer.Option("--since", help="Okno czasowe pobierania danych.")] = "1d",
+    ctx: typer.Context,
+    prices: Annotated[bool, typer.Option("--prices", help="Pobiera ceny dzienne.")] = False,
+    since: Annotated[
+        str, typer.Option("--since", help="Okno czasowe pobierania danych (Nd).")
+    ] = "1d",
 ) -> None:
-    """Pobiera dane (ceny/teksty)."""
-    _not_implemented("ingest")
+    """Pobiera dane (ceny/teksty); `--prices` włącza ingest cen ze Stooq."""
+    if not prices:
+        _not_implemented("ingest")
+    try:
+        context = build_context(_config_path(ctx))
+        end = SystemClock().now().astimezone(WARSAW).date()  # brzeg CLI (data sesji)
+        start = _parse_since(since, end)
+    except ConfigError as exc:
+        typer.echo(f"błąd konfiguracji: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    report = ingest_prices(context, default_price_tickers(context.config), start, end)
+    _print_report("ingest prices", report)
 
 
 @app.command(name="backfill-prices")
-def backfill_prices(
+def backfill(
+    ctx: typer.Context,
     years: Annotated[int, typer.Option("--years", help="Liczba lat historii.")] = 5,
 ) -> None:
-    """Pobiera historię cen."""
-    _not_implemented("backfill-prices")
+    """Pobiera historię cen partiami rocznymi."""
+    try:
+        context = build_context(_config_path(ctx))
+    except ConfigError as exc:
+        typer.echo(f"błąd konfiguracji: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        report = backfill_prices(context, years)
+    except (ValueError, GpwbotError) as exc:
+        typer.echo(f"błąd: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    _print_report("backfill prices", report)
 
 
 @app.command()

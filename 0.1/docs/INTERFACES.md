@@ -175,3 +175,83 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   przykładowe 8:00; D-014) — skorygowane w `MarketCfg` i `config/config.yaml`.
 - Nowe pliki: `config/tick_sizes.yaml`, `config/gpw_holidays_override.yaml`; fixture testowa
   `tests/fixtures/gpw_holidays.yaml` (oficjalne dni wolne GPW 2025–2026).
+
+## S03
+
+### `gpwbot.providers.base`
+
+- `PriceBar(date, open, high, low, close, adj_close=None, volume=None,
+  turnover_pln=None)` — frozen dataclass; bar po stronie źródła (ceny `Decimal`, PLN);
+  `turnover_pln` poza listą pól specyfikacji S03 (D-022).
+- `PriceProvider` — Protocol: `get_daily(symbol, start, end) -> list[PriceBar]`.
+
+### `gpwbot.providers.prices_stooq`
+
+- `STOOQ_DAILY_URL = "https://stooq.pl/q/d/l/"` — wzorzec do weryfikacji (V-03).
+- `parse_stooq_csv(text) -> list[PriceBar]` — czysty parser CSV: nagłówki PL/EN, zmienna
+  liczba kolumn, przecinek dziesiętny (zacytowany i niezacytowany; D-024); pusta odpowiedź /
+  komunikat zamiast danych → `ProviderError`.
+- `load_symbol_map(path) -> dict[str, str]` — nadpisywania ticker→symbol (klucze uppercase);
+  brak pliku = pusta mapa; błędy jako `ConfigError`.
+- `map_symbol(ticker, overrides) -> str` — nadpisanie z mapy albo ticker małymi literami.
+- `RateLimiter(requests_per_second)` — `.wait()` nie częściej niż limit (monotoniczny zegar).
+- `StooqPriceProvider(cfg: ProvidersCfg, symbol_map_path=..., client=None)`:
+  - `symbol_for(ticker) -> str`; `close()`.
+  - `fetch_raw(symbol, start, end) -> str` — surowa odpowiedź; retry 5xx/timeouty (tenacity,
+    backoff z configu), 4xx → natychmiast `ProviderError`, po wyczerpaniu prób
+    `ProviderError("… N nieudanych prób …")` (D-025).
+  - `get_daily(symbol, start, end) -> list[PriceBar]` — protokół `PriceProvider`.
+
+### `gpwbot.providers.prices_yfinance`
+
+- `symbol_for(ticker) -> str` — sufiks `.WA` (np. `PKN.WA`).
+- `bars_from_yf_df(df) -> list[PriceBar]` — czysta konwersja DataFrame'y yfinance; brak
+  kolumny `Adj Close` → `adj_close=None`; brak OHLC → `ProviderError`.
+- `YFinancePriceProvider(cfg)` — rzuca `ConfigError`, jeśli `providers.yfinance.enabled=False`
+  (domyślnie wyłączony); `get_daily` importuje `yfinance` leniwie (opcjonalna zależność).
+
+### `gpwbot.quality`
+
+- `QualityIssue(rule, date, message, flag=None)` — frozen dataclass; reguły:
+  `non_positive_price`, `high_below_low`, `ohlc_out_of_range`, `duplicate_date`, `gap`,
+  `large_change` (flaga `needs_review`).
+- `LARGE_CHANGE_PCT = Decimal("25")` — próg anomalii dziennego skoku (D-023).
+- `check_bars(df, calendar) -> list[QualityIssue]` — reguły jakości; df w kształcie
+  `repo.get_prices_df` (indeks `date`, kolumny OHLC + opcjonalnie `adj_close`); luki liczone
+  względem sesji GPW (święta/weekendy nie są lukami); skok liczony na `adj_close`, jeśli
+  dostępne. Brak wymaganych kolumn → `ValueError`.
+- `is_fresh(last_date, as_of, calendar) -> bool` — świeżość wobec ostatniej w pełni
+  zakończonej sesji (w trakcie bieżącej sesji jej świeca nie jest wymagana); `None` → False;
+  naive `as_of` → `ValueError`.
+
+### `gpwbot.ingest.prices_job`
+
+- `TickerResult(ticker, ok, bars_fetched=0, bars_upserted=0, error=None, issues=())`.
+- `IngestReport(start, end, results)` — właściwości: `ok_tickers`, `failed_tickers` (ticker→błąd),
+  `total_bars_upserted`, `total_issues`.
+- `ingest_prices(ctx, tickers, start, end) -> IngestReport` — pobranie → cache surowej
+  odpowiedzi (`raw_dir/stooq/<ticker>/<data warszawska>.csv`) → parsowanie → jakość (flaga
+  `needs_review` trafia do bazy) → upsert; obrót = wartość z CSV albo `close × volume`;
+  błąd tickera nie przerywa pozostałych.
+- `backfill_prices(ctx, years, tickers=None) -> IngestReport` — partie roczne od tej samej daty
+  `years` lat wstecz do dnia bieżącego (zegar kontekstu); domyślnie `default_price_tickers`.
+- `default_price_tickers(cfg) -> list[str]` — `universe.indices ∪ portfolio.benchmarks`
+  (do wymiany po S04; D-026).
+
+### Konfiguracja i kontekst (rozszerzenie S03)
+
+- `ProvidersCfg(stooq, yfinance)`; `StooqCfg(requests_per_second=1.0, timeout_seconds=30.0,
+  max_retries=3, retry_backoff_base_s=0.5)`; `YfinanceCfg(enabled=False)` — nowe sekcje w
+  `AppConfig` (`providers`, z domyślnymi wartościami).
+- `AppContext` zyskuje pole `session_factory: sessionmaker[Session]` (D-021);
+  `build_context(..., session_factory=...)` akceptuje override; domyślnie fabryka powstaje z
+  bazy z konfiguracji (migracje NIE są stosowane — `gpwbot db upgrade`).
+- Nowe pliki: `config/symbol_map.yaml` (nadpisywania symboli Stooq; indeksy do weryfikacji,
+  V-03), sekcja `providers` w `config/config.yaml`; fixtures `tests/fixtures/stooq_pkn.csv`,
+  `stooq_jump.csv`.
+
+### CLI (rozszerzenie S03)
+
+- `gpwbot ingest --prices [--since Nd]` — ingest cen ze Stooq dla tickerów z konfiguracji;
+  kod 1 przy błędzie konfiguracji/kształtu `--since`; bez `--prices` nadal stub (kod 2).
+- `gpwbot backfill-prices --years N` — backfill partiami rocznymi.

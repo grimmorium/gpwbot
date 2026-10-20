@@ -70,6 +70,16 @@ costs:
   commission_min_pln: 5
   slippage_bps: 15
 
+# Adaptery danych (S03): limity wyłącznie tutaj, nie w kodzie.
+providers:
+  stooq:
+    requests_per_second: 1.0   # prosty limiter zapytań
+    timeout_seconds: 30.0
+    max_retries: 3             # ponawiane: 5xx i timeouty; 4xx — nie
+    retry_backoff_base_s: 0.5  # wykładniczy backoff (mnożnik)
+  yfinance:
+    enabled: false             # zapasowy, nieoficjalny adapter (.WA)
+
 # Sekcje placeholder — pola rozszerzane w sesjach S05/S09/S10–S12/S14 (decyzja D-001).
 screener:
   top_n: 25

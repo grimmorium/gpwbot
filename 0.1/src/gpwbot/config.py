@@ -120,6 +120,26 @@ class CostsCfg(_Cfg):
     dividend_tax_pct: Pct = Decimal("19")
 
 
+class StooqCfg(_Cfg):
+    """Parametry adaptera cen Stooq (S03); limity wyłącznie z konfiguracji."""
+
+    requests_per_second: float = Field(default=1.0, gt=0)
+    timeout_seconds: float = Field(default=30.0, gt=0)
+    max_retries: int = Field(default=3, ge=1)
+    retry_backoff_base_s: float = Field(default=0.5, ge=0)
+
+
+class YfinanceCfg(_Cfg):
+    """Zapasowy adapter yfinance — nieoficjalny, domyślnie wyłączony (V-03)."""
+
+    enabled: bool = False
+
+
+class ProvidersCfg(_Cfg):
+    stooq: StooqCfg = StooqCfg()
+    yfinance: YfinanceCfg = YfinanceCfg()
+
+
 # Placeholder — pola rozszerzane w S05 (decyzja D-001).
 class ScreenerCfg(_Cfg):
     top_n: int = Field(default=25, gt=0)
@@ -157,6 +177,7 @@ class AppConfig(_Cfg):
     llm: LlmCfg = LlmCfg()
     risk: RiskCfg = RiskCfg()
     costs: CostsCfg = CostsCfg()
+    providers: ProvidersCfg = ProvidersCfg()
     screener: ScreenerCfg = ScreenerCfg()
     baseline: BaselineCfg = BaselineCfg()
     text: TextCfg = TextCfg()
