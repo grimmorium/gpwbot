@@ -11,7 +11,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | S02 | Kalendarz GPW, tick size, koszty | done | calendar/ticks/costs + config/{tick_sizes,gpw_holidays_override}.yaml; 190 testów zielone (93 nowe), pokrycie modułów ≥ 95%; godziny sesji zweryfikowane wg SZOG (preopen 8:30); ticki przykładowe (V-02) |
 | S03 | Ceny: Stooq, jakość danych, ingest | done | providers/{base,prices_stooq,prices_yfinance}, quality, ingest/prices_job + config/symbol_map.yaml; 279 testów zielone (89 nowych), pokrycie modułów ≥ 90%; retry/limiter z configu; V-03 częściowo domknięte (wzorzec URL do weryfikacji — test @network) |
 | S04 | Universe, instrumenty, aliasy | done | universe.py (sync seedu + filtry), aliases.py (walidacja), config/{universe_seed,aliases}.yaml, CLI `universe --as-of`; 312 testów zielone (33 nowe); seed WIG20/mWIG40 do weryfikacji (V-05); SUSPENDED = heurystyka zerowej świecy (D-028/V-06) |
-| S05 | Wskaźniki i screener | todo | zależy od: S04 |
+| S05 | Wskaźniki i screener | done | features.py (wskaźniki + FeatureSet + save_features), screener.py (scoring przekrojowy + shortlista), wagi ScreenerCfg, CLI `screen`; 374 testy zielone (+62 nowe); pokrycie: features 93.5%, screener 100% |
 | S06 | Ledger, pozycje, partie FIFO | todo | zależy od: S01, S02 |
 | S07 | Symulator wykonania | todo | zależy od: S02, S06 |
 | S08 | Risk Manager | todo | zależy od: S05, S06 |
@@ -44,11 +44,19 @@ przed S04). Z S04: D-027 (`UniverseCfg.min_history_sessions = 250` — nowe pole
 D-028 (SUSPENDED = heurystyka zerowej świecy; V-06 otwarte), D-029 (kolejność filtrów
 `get_universe`; brak cen = SHORT_HISTORY; `exclude_tickers` poza kandydatami), D-030 (schemat i
 walidacja `aliases.yaml` oraz seedu), D-031 (`ExclusionReason` jako `StrEnum`, ruff UP042).
+Z S05: D-032 (skala rangi percentylowej `[1/k, 1]`, brak wartości = 0; `low_vol` ← inwersja
+`atr_pct`; wagi scoringu domyślnie po 1.0 — kalibracja poza S05), D-033 (`compute_features`
+wymaga keyword-only `calendar` — stale wg `is_fresh`; `FeatureSet.close` = surowa cena; ATR na
+surowych OHLC).
 
 ## Dług techniczny
 
-- Sekcje `screener`, `baseline`, `text`, `eval` w konfiguracji to placeholdery — rozbudowa
-  w S05/S09/S10–S12/S14 (D-001).
+- Sekcje `baseline`, `text`, `eval` w konfiguracji to placeholdery — rozbudowa w S09/
+  S10–S12/S14 (D-001); sekcja `screener` rozszerzona o wagi scoringu w S05.
+- CLI `screen` bez pozycji i eventów (S05): shortlista = TOP_SCORE, bo brak ledgeru (S06)
+  i tekstów (S10); podpiąć `positions`/`event_tickers` przy orkiestracji runu (S09/S13).
+- Wagi screenera domyślnie po 1.0 (D-032) — kalibracja przed startem forward testu /
+  przy ewaluacji (S14).
 - Wzorzec URL Stooq i symbole indeksów (`config/symbol_map.yaml`) niezweryfikowane na żywej
   odpowiedzi (V-03) — domknięcie: `pytest -m network tests/providers/` + potwierdzenie warunków
   użycia. Heurystyka przecinka dziesiętnego (D-024) do uproszczenia po weryfikacji formatu.

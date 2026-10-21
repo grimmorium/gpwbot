@@ -217,6 +217,33 @@ Klasa dziedzicząca po `(str, Enum)` jest flagowana przez ruff (UP042); projekt 
 porównania z literałami i `.value` działają identycznie; CLI wypisuje wyłącznie `.value`,
 więc różnice w formatowaniu członków nie wpływają na wyjście.
 
+### D-032. Screener: skala rangi, mapowanie cech i wagi scoringu
+- Ranga percentylowa = uśredniona pozycja (1-based) wśród ważnych wartości / liczba ważnych →
+  przedział `[1/k, 1]`; brak wartości (`None`/NaN) = ranga `0.0`; remisy dostają tę samą
+  uśrednioną rangę; wynik nie zależy od kolejności wejścia (suma per ticker ma stały porządek
+  składników).
+- `trend` jako dosłowne `1` lub `0` (nie percentyl); cecha `low_vol` ← inwersja rangi
+  `atr_pct` (Część I sekcja 8: "zmienność (ATR14 / cena)"); `vol_z` — wyższy = lepiej.
+- Wagi w `ScreenerCfg` (`weight_mom_6m`, `weight_mom_12_1`, `weight_trend`, `weight_low_vol`,
+  `weight_vol_z`) mają domyślnie po `1.0` — wartości neutralne i arbitralne; kalibracja wag
+  jest poza zakresem S05 (parametry wyłącznie w konfiguracji).
+- `features_json` w `feature_snapshots`: kwoty jako tekst, daty jako ISO (pydantic
+  `model_dump(mode="json")`) — spójnie z konwencją A3 "w bazie tekst przez DecimalStr".
+
+### D-033. `compute_features`: wymagany kalendarz, cena surowa w FeatureSet, ATR na OHLC
+- Sygnatura specyfikacji to `compute_features(ticker, df, as_of)`; dodano keyword-only
+  parametr `calendar: GpwCalendar` — flaga `stale` jest definiowana wobec ostatniej
+  zakończonej sesji GPW (`quality.is_fresh`, godziny faz z konfiguracji), więc bez kalendarza
+  nie da się jej obliczyć poprawnie. Wszyscy wywołujący produkcyjni (CLI, S09) mają
+  `ctx.config`.
+- `FeatureSet.close` = surowa cena zamknięcia ostatniej świecy (cena transakcyjna);
+  `trend_ok` porównuje ją ze `sma50`/`sma200` liczonymi na serii skorygowanej.
+- ATR liczone na **surowych** OHLC: służy poziomom stop-loss (S08), więc musi być
+  porównywalne z aktualną ceną transakcyjną; istnieje tylko `adj_close`, a mieszanie skal
+  zniekształciłoby TR.
+- Konwencja Wildera: `TR[0] = high − low` (brak prev_close); pierwszy RSI na indeksie `n`
+  (delt od drugiej ceny), pierwszy ATR na indeksie `n−1`.
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |

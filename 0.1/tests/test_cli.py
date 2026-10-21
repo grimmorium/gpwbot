@@ -1,4 +1,5 @@
-"""Testy CLI (S00): --help, version, doctor, stuby; S01: db upgrade; S03: ingest; S04: universe."""
+"""Testy CLI (S00): --help, version, doctor, stuby; S01: db upgrade; S03: ingest;
+S04: universe; S05: screen."""
 
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ def test_help_lists_commands() -> None:
         "ingest",
         "backfill-prices",
         "universe",
+        "screen",
         "run",
         "replay",
         "report",
@@ -270,5 +272,109 @@ def test_universe_bad_as_of_returns_1(tmp_path: Path, monkeypatch: pytest.Monkey
 
     monkeypatch.chdir(tmp_path)  # odwracane automatycznie po teście (chdir nie zwraca CM)
     result = runner.invoke(app, ["--config", str(config_file), "universe", "--as-of", "abc"])
+
+    assert result.exit_code == 1
+
+
+# --- S05: screen --------------------------------------------------------------
+
+
+def _write_screen_env(tmp_path: Path) -> tuple[Path, Path]:
+    """Konfiguracja + seed pod tmp CWD; baza migracyjnie gotowa (wzorzec S04)."""
+    db_file = tmp_path / "data" / "gpwbot.db"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "universe_seed.yaml").write_text(
+        "- ticker: AAA\n  indices: [wig20]\n- ticker: BBB\n  indices: [wig20]\n",
+        encoding="utf-8",
+    )
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "paths:\n"
+        f"  db_path: {db_file.as_posix()}\n"
+        f"  data_dir: {(tmp_path / 'data').as_posix()}\n"
+        f"  raw_dir: {(tmp_path / 'raw').as_posix()}\n"
+        f"  reports_dir: {(tmp_path / 'reports').as_posix()}\n"
+        "universe:\n"
+        "  indices: [wig20]\n"
+        "  min_avg_turnover_pln_20d: 100\n"
+        "  min_history_sessions: 3\n",
+        encoding="utf-8",
+    )
+    upgrade_to_head(db_file)
+    return config_file, db_file
+
+
+def _seed_screen_prices(db_file: Path, n_bars: int = 40) -> None:
+    """Rosnące ceny AAA i malejące BBB (różne zmienności/momentum) do czw. 2026-10-15."""
+    dates: list[dt.date] = []
+    d = dt.date(2026, 10, 15)
+    while len(dates) < n_bars:
+        if d.weekday() < 5:
+            dates.append(d)
+        d -= dt.timedelta(days=1)
+    dates.reverse()
+
+    def bars_for(start: Decimal, step: Decimal) -> list[PriceBar]:
+        out = []
+        for i, date in enumerate(dates):
+            close = start + step * i
+            volume = 1_000 + i
+            out.append(
+                PriceBar(
+                    date=date,
+                    open=close - Decimal("0.1"),
+                    high=close + Decimal("0.2"),
+                    low=close - Decimal("0.3"),
+                    close=close,
+                    volume=volume,
+                    turnover_pln=Decimal(str(close * volume)),
+                )
+            )
+        return out
+
+    engine = create_engine(sqlite_url(db_file))
+    factory = make_session_factory(engine)
+    try:
+        with session_scope(factory) as s:
+            (aaa, bbb) = upsert_instruments(
+                s,
+                [
+                    InstrumentUpsert(ticker="AAA", index_membership=["wig20"]),
+                    InstrumentUpsert(ticker="BBB", index_membership=["wig20"]),
+                ],
+            )
+            ts_now = dt.datetime(2026, 10, 15, 21, tzinfo=dt.UTC)
+            upsert_prices(s, aaa.id, bars_for(Decimal("10"), Decimal("0.1")), "test", now=ts_now)
+            upsert_prices(s, bbb.id, bars_for(Decimal("20"), Decimal("-0.05")), "test", now=ts_now)
+    finally:
+        engine.dispose()
+
+
+def test_screen_wypisuje_shortliste_z_powodami(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Akceptacja S05: `gpwbot screen --as-of DATA` wypisuje shortlistę z powodami."""
+    config_file, db_file = _write_screen_env(tmp_path)
+    _seed_screen_prices(db_file)
+
+    monkeypatch.chdir(tmp_path)  # odwracane automatycznie po teście (chdir nie zwraca CM)
+    result = runner.invoke(app, ["--config", str(config_file), "screen", "--as-of", "2026-10-15"])
+
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "universe: członkowie=2" in out
+    assert "shortlista (2):" in out
+    for ticker in ("AAA", "BBB"):
+        line = next(line for line in out.splitlines() if line.strip().startswith(ticker))
+        assert f"{ticker}: score=" in line
+        assert "powody=top_score" in line
+
+
+def test_screen_bad_as_of_returns_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_file, _ = _write_screen_env(tmp_path)
+
+    monkeypatch.chdir(tmp_path)  # odwracane automatycznie po teście (chdir nie zwraca CM)
+    result = runner.invoke(app, ["--config", str(config_file), "screen", "--as-of", "abc"])
 
     assert result.exit_code == 1

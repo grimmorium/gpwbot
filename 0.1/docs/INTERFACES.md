@@ -307,3 +307,60 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   wykluczeń; `--as-of`: data `YYYY-MM-DD` → koniec dnia sesji w Warszawie (23:59:59), ISO
   datetime bez strefy → Warszawa; brak opcji → bieżący czas. Kod 1 przy błędzie konfiguracji,
   kształtu `--as-of` lub bazy danych.
+
+## S05
+
+### `gpwbot.features`
+
+- Funkcje wskaźników `Series → Series` (NaN przed pełnym oknem): `sma(s, n)`, `ema(s, n)`
+  (`span=n`, `adjust=False`, `min_periods=n`), `rsi_wilder(close, n=14)`,
+  `atr_wilder(high, low, close, n=14)`, `momentum(adj, n)` = `adj/adj.shift(n) − 1`,
+  `momentum_12_1(adj)` = `shift(21)/shift(252) − 1`, `volume_zscore(v, n=60)` (std == 0 → NaN),
+  `dist_to_high(close, n=252)` = `close/rolling_max − 1` (≤ 0), `avg_turnover(t, n=20)`,
+  `realized_vol(adj, n=20)` = std logarytmicznych stóp zwrotu × √252. Wilder: pierwsza średnia
+  to SMA z pierwszych `n` obserwacji, dalej `(prev×(n−1)+x)/n`; TR[0] = high − low; pierwszy RSI
+  na indeksie `n`, pierwszy ATR na `n−1`; RSI: straty=0 i zysk>0 → 100, obie=0 → 50 (D-032/D-033).
+- `FeatureSet` (pydantic, frozen): `ticker`, `as_of`, `close`, `ret_1d`, `mom_3m` (63 sesje),
+  `mom_6m` (126), `mom_12_1`, `sma50`, `sma200`, `trend_ok` (close > sma200 i sma50 > sma200),
+  `rsi14`, `atr14`, `atr_pct`, `vol_z`, `dist_52w_high`, `avg_turnover_20d`, `vol_ann`, `n_obs`,
+  `stale`; ceny/kwoty jako `Decimal`, bezwymiarowe wskaźniki jako `float`; niewystarczająca
+  historia → `None`.
+- `compute_features(ticker, df, as_of, *, calendar) -> FeatureSet` — tnie do wierszy o dacie ≤
+  `as_of` (brak look-ahead; deduplikacja i sortowanie defensywne); wskaźniki cenowe na
+  `adj_close` (fallback `close`, gdy brak wartości), ATR na surowych OHLC, `stale` wg
+  `quality.is_fresh` wobec kalendarza GPW — stąd wymagany keyword-only `calendar: GpwCalendar`
+  (D-033). Naive `as_of` → `ValueError`; pusty df → wszystkie pola `None`, `n_obs=0`,
+  `stale=True`.
+- `save_features(session, fs) -> None` — upsert do `feature_snapshots` po `(instrument_id,
+  as_of)`; instrument wyszukiwany po tickerze z `FeatureSet`; nieznany ticker → `ValueError`;
+  payload JSON przez `model_dump(mode="json")` (kwoty jako tekst — D-032); flush bez commitu.
+
+### `gpwbot.screener`
+
+- `Reason` — `StrEnum`: `TOP_SCORE`, `POSITION`, `TEXT_EVENT` (wartości małe litery, wzorzec
+  D-031).
+- `ShortlistItem(ticker, reasons: tuple[Reason, ...], score)` / `Shortlist(items:
+  tuple[ShortlistItem, ...])` — frozen dataclassy.
+- `score_universe(features: Sequence[FeatureSet], cfg) -> dict[str, float]` — suma wag × rang
+  dla pięciu cech (`mom_6m`, `mom_12_1`; `trend` jako 1/0; `low_vol` ← inwersja rangi
+  `atr_pct`; `vol_z`); ranga percentylowa z uśrednionymi remisami, brak wartości = 0 (D-032);
+  zduplikowany ticker → `ValueError`; pusta lista → `{}`.
+- `build_shortlist(scores: Mapping[str, float], positions: Sequence[str], event_tickers:
+  Mapping[str, float], cfg) -> Shortlist` — pozycje ∪ teksty (materiality ≥ próg; mapa
+  ticker→materiality) ∪ top N po score; kolejność grup POSITION → TEXT_EVENT → TOP_SCORE
+  (wewnątrz: (−score, ticker), dla tekstów (−materiality, ticker)); przy przekroczeniu
+  `max_total` obcinanie najpierw TOP_SCORE od najniższego wyniku, potem TEXT_EVENT od najniższej
+  istotności; pozycje nigdy nie są odcinane. Tickery normalizowane do uppercase; wynik
+  deterministyczny i niezależny od kolejności wejścia.
+
+### Konfiguracja (rozszerzenie S05)
+
+- `ScreenerCfg` zyskuje wagi scoringu: `weight_mom_6m`, `weight_mom_12_1`, `weight_trend`,
+  `weight_low_vol`, `weight_vol_z` (`float ≥ 0`, domyślnie po `1.0`; D-032); jawne wartości w
+  `config/config.yaml`.
+
+### CLI (rozszerzenie S05)
+
+- `gpwbot screen [--as-of DATA]` — sync seedu → universe → features członków → scoring →
+  wypisuje shortlistę z powodami (`score=… powody=top_score+…`); bez pozycji i eventów (brak
+  ledgeru/tekstów do S06/S10). Kod 1 przy błędzie konfiguracji, kształtu `--as-of` lub bazy.

@@ -16,17 +16,21 @@ import typer
 from sqlalchemy.exc import SQLAlchemyError
 
 from gpwbot import __version__
+from gpwbot.calendar import GpwCalendar
 from gpwbot.clock import SystemClock
 from gpwbot.config import load_config
 from gpwbot.context import build_context
+from gpwbot.db import repo
 from gpwbot.db.migrate import upgrade_to_head
 from gpwbot.errors import ConfigError, GpwbotError
+from gpwbot.features import FeatureSet, compute_features
 from gpwbot.ingest.prices_job import (
     IngestReport,
     backfill_prices,
     default_price_tickers,
     ingest_prices,
 )
+from gpwbot.screener import build_shortlist, score_universe
 from gpwbot.universe import get_universe, sync_instruments
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -207,6 +211,53 @@ def universe(
     typer.echo(f"wykluczeni ({len(result.excluded)}):")
     for ticker, reason in result.excluded.items():
         typer.echo(f"  {ticker}: {reason.value}")
+
+
+@app.command()
+def screen(
+    ctx: typer.Context,
+    as_of: Annotated[
+        str,
+        typer.Option("--as-of", help="Chwiel T (data YYYY-MM-DD lub ISO datetime)."),
+    ] = "",
+) -> None:
+    """Buduje shortlistę screenera (features + scoring); kod 1 przy błędzie."""
+    try:
+        context = build_context(_config_path(ctx))
+        ts = _parse_as_of(as_of) if as_of else SystemClock().now()
+        calendar = GpwCalendar(context.config)
+    except ConfigError as exc:
+        typer.echo(f"błąd konfiguracji: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        sync_instruments(context)
+        universe_result = get_universe(context, ts)
+        end_date = ts.astimezone(WARSAW).date()
+        features: list[FeatureSet] = []
+        with context.session_factory() as session:
+            for ticker in universe_result.members:
+                inst = repo.get_instrument_by_ticker(session, ticker)
+                if inst is None:
+                    continue
+                df = repo.get_prices_df(session, inst.id, end=end_date)
+                features.append(compute_features(ticker, df, ts, calendar=calendar))
+        screener_cfg = context.config.screener
+        scores = score_universe(features, screener_cfg)
+        shortlist = build_shortlist(scores, positions=[], event_tickers={}, cfg=screener_cfg)
+    except (ConfigError, GpwbotError, SQLAlchemyError) as exc:
+        typer.echo(f"błąd: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"as_of: {ts.isoformat()}")
+    typer.echo(
+        f"universe: członkowie={len(universe_result.members)} "
+        f"wykluczeni={len(universe_result.excluded)}"
+    )
+    typer.echo(f"shortlista ({len(shortlist.items)}):")
+    for item in shortlist.items:
+        reasons = "+".join(r.value for r in item.reasons)
+        typer.echo(f"  {item.ticker}: score={item.score:.4f} powody={reasons}")
 
 
 @app.command()

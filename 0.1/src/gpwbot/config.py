@@ -142,11 +142,17 @@ class ProvidersCfg(_Cfg):
     yfinance: YfinanceCfg = YfinanceCfg()
 
 
-# Placeholder — pola rozszerzane w S05 (decyzja D-001).
 class ScreenerCfg(_Cfg):
+    """Parametry screenera (S05); wagi scoringu wyłącznie z konfiguracji (D-032)."""
+
     top_n: int = Field(default=25, gt=0)
     max_total: int = Field(default=40, gt=0)
     materiality_threshold: Ratio = Decimal("0.6")
+    weight_mom_6m: float = Field(default=1.0, ge=0)
+    weight_mom_12_1: float = Field(default=1.0, ge=0)
+    weight_trend: float = Field(default=1.0, ge=0)
+    weight_low_vol: float = Field(default=1.0, ge=0)
+    weight_vol_z: float = Field(default=1.0, ge=0)
 
 
 # Placeholder — pola rozszerzane w S09/S14 (decyzja D-001).

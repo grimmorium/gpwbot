@@ -81,11 +81,17 @@ providers:
   yfinance:
     enabled: false             # zapasowy, nieoficjalny adapter (.WA)
 
-# Sekcje placeholder — pola rozszerzane w sesjach S05/S09/S10–S12/S14 (decyzja D-001).
+# Sekcje placeholder — pola rozszerzane w sesjach S09/S10–S12/S14 (decyzja D-001).
 screener:
   top_n: 25
   max_total: 40
   materiality_threshold: 0.6
+  # Wagi scoringu przekrojowego (S05, D-032): neutralne domyślne — kalibracja poza S05.
+  weight_mom_6m: 1.0
+  weight_mom_12_1: 1.0
+  weight_trend: 1.0
+  weight_low_vol: 1.0   # cecha = atr_pct (ATR14/cena), ranga inwersyjna
+  weight_vol_z: 1.0
 
 baseline:
   top_k: 10
