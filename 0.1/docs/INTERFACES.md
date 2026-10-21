@@ -364,3 +364,74 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
 - `gpwbot screen [--as-of DATA]` — sync seedu → universe → features członków → scoring →
   wypisuje shortlistę z powodami (`score=… powody=top_score+…`); bez pozycji i eventów (brak
   ledgeru/tekstów do S06/S10). Kod 1 przy błędzie konfiguracji, kształtu `--as-of` lub bazy.
+
+## S06
+
+### `gpwbot.domain` (typy wspólne)
+
+- `Side` — Enum: `BUY`, `SELL`; przeniesione z `gpwbot.costs` w S06 (D-034), tam reeksportowane
+  (`from gpwbot.costs import Side` nadal działa).
+- `OrderIntent(ticker, side, qty, limit_price=None, reason="")` — frozen dataclass; propozycja
+  zlecenia przed zapisem do bazy (S07/S08).
+- `FillRecord(order_id, session_date, price, qty, commission=Decimal("0"))` — frozen dataclass;
+  dane realizacji (wejście do zapisu w `fills` i `PortfolioService.apply_fill`).
+
+### `gpwbot.portfolio.fifo` (czysty)
+
+- `Lot(id, buy_date, qty_remaining, unit_cost)` / `LotConsumption(lot_id, qty, unit_cost)` —
+  frozen dataclassy; `unit_cost = cena + prowizja_zakupu/qty` w pełnej precyzji (D-035).
+- `consume_lots(lots: Sequence[Lot], qty) -> list[LotConsumption]` — konsumpcja FIFO w kolejności
+  `(buy_date, id)`; partie z zerowym stanem pomijane; `qty <= 0` → `ValueError`;
+  `qty > suma partii` → `LedgerError`.
+
+### `gpwbot.portfolio.service`
+
+- `Position(ticker, qty, avg_cost, last_price, market_value, unrealized_pnl, held_sessions,
+  stop_price)` — frozen dataclass; wartości jednostkowe w pełnej precyzji (D-035).
+- `PortfolioService(session, clock, calendar: GpwCalendar, cfg: AppConfig)` — metody flushują bez
+  commitu (transakcję prowadzi wywołujący); parametry rynkowe wyłącznie z `cfg` (A3):
+  - `create_portfolio(pdef: PortfolioDef) -> int` — idempotentnie po nazwie; zapisuje wpłatę
+    początkową jako wpis DEPOSIT (`available_from = NULL`; D-036).
+  - `cash_total(pid) -> Decimal` — suma wszystkich wpisów ledgera (wraz z wpłatą).
+  - `cash_available(pid, on_date: dt.date) -> Decimal` — wpisy z `available_from IS NULL OR <=
+    on_date` minus aktywne rezerwacje (`orders.reserved_amount`).
+  - `reserve(pid, order_id, amount)` / `release(order_id)` — blokada/zwolnienie gotówki pod
+    zlecenie; nadpisanie dozwolone, release idempotentny; ujemna kwota → `ValueError`, cudze lub
+    nieistniejące zlecenie → `LedgerError`.
+  - `apply_fill(fill_id)` — BUY: nowa partia (`unit_cost = cena + prowizja/qty`), wpisy BUY i
+    COMMISSION (wpływ od daty sesji), zwolnienie rezerwacji, `opened_session` przy nowej pozycji;
+    SELL: konsumpcja FIFO, wpis SELL i COMMISSION (wpływ od daty rozliczenia T+N przez kalendarz,
+    albo od razu przy `settle_instantly`; D-036), `fills.realized_pnl = przychód − koszt partii −
+    prowizja`, `last_sell_session`. Po obu stronach: ujemna gotówka po księgowaniu → `LedgerError`
+    (D-038); sprzedaż > stan → `LedgerError` (przez FIFO).
+  - `positions(pid, prices: Mapping[str, Decimal]) -> list[Position]` — suma partii per ticker;
+    brak ceny dla posiadanej pozycji → `ValueError`; `held_sessions` od `opened_session` do daty
+    warszawskiej zegara.
+  - `equity(pid, prices) -> Decimal` = `cash_total` + wartość pozycji (D-038).
+  - `peak_equity(pid) -> Decimal | None` — maksimum z `portfolio_snapshots`; `None`, gdy brak.
+  - `snapshot(pid, date, prices)` — upsert snapshotu (equity, cash, pozycje jako JSON z kwotami
+    w tekście).
+  - `apply_corporate_actions(pid, as_of: dt.date) -> int` — dywidendy i splity z `ex_date <=
+    as_of`; idempotentne po `ref` (`DIV:<inst>:<ex>` / marker ADJUSTMENT o kwocie 0 dla
+    `SPLIT:<inst>:<ex>`; D-037); dywidenda: data bytu = sesja przed `ex_date`, stan z replayu
+    fills, netto po podatku z configu, wpływ od `pay_date`; split: partie kupione przed `ex_date`
+    (×współczynnik, koszt ÷), wynik ułamkowy → `LedgerError`. Zwraca liczbę zastosowanych akcji.
+  - `check_invariants(pid)` — gotówka ≥ 0; partie > 0; każda sprzedaż ma `realized_pnl`;
+    rezerwacje tylko dla BUY; naruszenie → `LedgerError` (D-038).
+
+### Baza danych (rozszerzenie S01)
+
+- Nowe tabele: `position_meta(portfolio_id, instrument_id [PK], stop_price, entry_atr,
+  opened_session, last_sell_session)` — stop/ATR ustawia S08; `corporate_actions(instrument_id,
+  type, ex_date [PK], pay_date, value)` (type: DIVIDEND/SPLIT).
+- Nowe kolumny: `fills.realized_pnl` (NULL dla BUY), `cash_ledger.available_from` (data wpływu;
+  NULL = natychmiast), `orders.reserved_amount` (aktywna rezerwacja; D-036).
+- Rewizja Alembic `a3f5c8e2b9d4_s06_ledger_fifo`; semantyka `tax_lots.buy_price` = dokładny koszt
+  jednostkowy (D-035).
+
+### Testy / fixture
+
+- `tests/portfolio/`: `test_fifo.py` (czysta logika), `test_service.py` (integracja z `tmp_db`:
+  fills, rezerwacje, T+2/weekend/święto przez nadpisanie kalendarza, dywidendy, splity, snapshoty,
+  izolacja portfeli), `test_properties.py` (`hypothesis`: losowe ciągi kupna/sprzedaży —
+  niezmienniki po każdym kroku, tożsamość P/L z odchyleniem ≤ 0.01).

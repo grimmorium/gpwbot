@@ -14,6 +14,7 @@ from pathlib import Path
 LOGIC_BASENAMES = {
     "features.py",
     "fifo.py",
+    "service.py",  # portfolio/service (S06: akceptacja >= 90%)
     "fill_model.py",
     "metrics.py",
     "calendar.py",

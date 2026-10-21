@@ -7,19 +7,12 @@ Parametry rynkowe pochodzą z konfiguracji (`CostsCfg`), nie z kodu.
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
-from enum import Enum
 
 from gpwbot.config import CostsCfg
+from gpwbot.domain import Side  # noqa: F401 — reeksport (D-034); źródło prawdy w `domain`
 
 TWO_PLACES = Decimal("0.01")
 _BPS_SCALE = Decimal(10_000)
-
-
-class Side(Enum):
-    """Strona zlecenia (używana też w S07 — fill model)."""
-
-    BUY = "BUY"
-    SELL = "SELL"
 
 
 def commission(value: Decimal, cfg: CostsCfg) -> Decimal:

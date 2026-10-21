@@ -244,6 +244,63 @@ więc różnice w formatowaniu członków nie wpływają na wyjście.
 - Konwencja Wildera: `TR[0] = high − low` (brak prev_close); pierwszy RSI na indeksie `n`
   (delt od drugiej ceny), pierwszy ATR na indeksie `n−1`.
 
+## Decyzje S06
+
+### D-034. `Side` przeniesione do `gpwbot.domain`, reeksport w `gpwbot.costs`
+Specyfikacja S06 definiuje `domain.py` jako typy wspólne (`Side`, `OrderIntent`,
+`FillRecord`), a `Side` istniało już od S02 w `gpwbot.costs`. Zamiast dwóch niekompatybilnych
+enumów przeniesiono definicję do `domain.py`; `costs.py` reeksportuje (`from gpwbot.domain
+import Side`) — publiczna sygnatura `gpwbot.costs.Side` zachowana, istniejące użycia i testy
+działają bez zmian.
+
+### D-035. Semantyka `tax_lots.buy_price`: dokładny koszt jednostkowy (bez kwantyzacji)
+Tabela `tax_lots` nie ma osobnej kolumny na prowizję, więc `buy_price` przechowuje
+`unit_cost = cena + prowizja_zakupu / qty` (dokładny iloraz Decimal), a nie surową cenę filla.
+Konsekwencje: `avg_cost` w `Position`, `fills.realized_pnl` i koszty partii liczone są w pełnej
+precyzji — bez zaokrąglania do 0,01 — bo tożsamość księgowa (`equity − kapitał = realized +
+niezrealizowany + dywidendy`) zachodzi wtedy z dokładnością do szumu arytmetyki Decimal;
+kwantyzacja partii dałaby dryf nawet 0,5 PLN/partię. Kwoty w `cash_ledger` mają z natury
+2 miejsca (ceny i prowizje są 2dp). Test własnościowy akceptuje odchylenie ≤ 0,01 — realne
+błędy księgowe dają odchylenie ≥ 0,01.
+
+### D-036. Model gotówki: wpłata początkowa w ledgerze i rezerwacje w `orders`
+- `create_portfolio` zapisuje wpis DEPOSIT o kwocie kapitału początkowego (wpływ natychmiastowy,
+  `available_from = NULL`) — dzięki temu `cash_total(pid) = Σ wszystkich wpisów`, a wzór specy
+  "cash_total = wpłaty + suma wpisów" czyta się jako: wpłata początkowa jest pierwszym wpisem.
+- `cash_available(pid, on_date)` = Σ wpisów z `available_from IS NULL OR <= on_date` minus
+  aktywne rezerwacje — dosłownie wg specyfikacji; każdy wpis ma datę biznesową: BUY/COMMISSION
+  zakupu = data sesji filla, SELL + COMMISSION sprzedaży = data rozliczenia (`add_sessions(data
+  sesji, settlement_days)` albo sama data przy `settle_instantly`), DIVIDEND = `pay_date`,
+  DEPOSIT początkowy = NULL. `ts` to tylko czas zapisu audytowego.
+- Rezerwacje trwale w nowej kolumnie `orders.reserved_amount` (specyfikacja S06 nie wskazuje
+  miejsca; zlecenie jest naturalnym właścicielem rezerwacji, a `release(order_id)` działa bez
+  portfela). Nadpisywanie rezerwacji tego samego zlecenia dozwolone; `apply_fill` zawsze ją
+  zwalnia (obustronnie — defensywnie).
+
+### D-037. Zdarzenia korporacyjne: idempotencja po `ref`, replay stanu, warunek partii
+- Idempotencja "po ref" z specyfikacji: dywidenda ma naturalny
+  `ref = DIV:<instrument_id>:<ex_date>` (wpis DIVIDEND); split nie rusza gotówki, więc jego
+  markerem jest wpis ADJUSTMENT o kwocie 0 z `ref = SPLIT:<instrument_id>:<ex_date>`. Przed
+  księgowaniem sprawdzany istniejący wpis — powtórne uruchomienie niczego nie zmienia.
+- Dywidenda: data bytu = sesja poprzedzająca `ex_date` (`previous_session`); liczbę akcji
+  posiadanych na ten dzień odtwarza replay fills (Σ kupionych − Σ sprzedanych do tej daty) —
+  poprawne także gdy pozycja była częściowo zamknięta między datą bytu a wypłatą. Brak `pay_date`
+  → wpływ od `ex_date`. Pozycja kupiona w dniu `ex_date` nie dostaje dywidendy (test specyfikacji).
+- Split: mnożone są tylko partie z `buy_date < ex_date` (kupione przed splitem); wynik ułamkowy
+  (`qty × współczynnik` nie jest całkowity) → `LedgerError`; koszt jednostkowy ÷ współczynnik.
+  Nieznany typ wiersza → `LedgerError`.
+
+### D-038. Strażniki niezmienników i semantyka wyceny
+- `apply_fill` po obu stronach sprawdza `cash_total >= 0` po księgowaniu (rzuca `LedgerError`) —
+  gwarantuje "brak ujemnej gotówki" na granicy, także przy sprzedaży o przychodzie mniejszym niż
+  minimalna prowizja; `check_invariants` pozostaje backstopem (gotówka ≥ 0, partie > 0, każda
+  sprzedaż ma `realized_pnl`, rezerwacje tylko dla BUY).
+- `positions(pid, prices)` wymaga cen wszystkich posiadanych tickerów — brak ceny → `ValueError`
+  (S09/S13 podają ostatnie close także dla zawieszonych spółek); wycena po 0 byłaby fałszowaniem.
+- `equity = cash_total + wartość pozycji` (cała gotówka, nie tylko dostępna — środki w trakcie
+  rozliczenia T+2 nadal są aktywami); `held_sessions = count_sessions(opened_session, data
+  warszawska zegara)`; `peak_equity` wyłącznie z zapisanych snapshotów (`None`, gdy brak).
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |

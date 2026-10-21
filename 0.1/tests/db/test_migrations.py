@@ -28,6 +28,9 @@ EXPECTED_TABLES = {
     "portfolio_snapshots",
     "llm_calls",
     "portfolios",
+    # S06: ledger, pozycje, partie FIFO
+    "position_meta",
+    "corporate_actions",
 }
 
 

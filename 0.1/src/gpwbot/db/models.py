@@ -185,6 +185,8 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending")
     created_at: Mapped[dt.datetime] = mapped_column(UtcDateTime)
     valid_from_session: Mapped[dt.date] = mapped_column(Date)
+    # S06: aktywna rezerwacja gotówki (reserve/release); NULL = brak rezerwacji.
+    reserved_amount: Mapped[Decimal | None] = mapped_column(DecimalStr)
 
 
 class Fill(Base):
@@ -197,6 +199,8 @@ class Fill(Base):
     qty: Mapped[int] = mapped_column(Integer)
     commission: Mapped[Decimal] = mapped_column(DecimalStr, default=Decimal("0"))
     slippage_cost: Mapped[Decimal] = mapped_column(DecimalStr, default=Decimal("0"))
+    # S06: wynik podatkowy sprzedaży (przychód − koszt partii FIFO − prowizja); NULL dla BUY.
+    realized_pnl: Mapped[Decimal | None] = mapped_column(DecimalStr)
 
 
 class TaxLot(Base):
@@ -217,9 +221,39 @@ class CashLedgerEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"))
     ts: Mapped[dt.datetime] = mapped_column(UtcDateTime)
-    type: Mapped[str] = mapped_column(String(32))  # initial / commission / dividend / fill_*
+    type: Mapped[str] = mapped_column(
+        String(32)
+    )  # DEPOSIT/BUY/SELL/COMMISSION/DIVIDEND/ADJUSTMENT (S06)
     amount: Mapped[Decimal] = mapped_column(DecimalStr)
     ref: Mapped[str | None] = mapped_column(String(256))
+    # S06: od kiedy wpływ jest dostępny (rozliczenie T+2, data wypłaty dywidendy);
+    # NULL = natychmiast. `ts` to czas zapisu audytowego, nie data biznesowa.
+    available_from: Mapped[dt.date | None] = mapped_column(Date)
+
+
+class PositionMeta(Base):
+    """S06: metadane pozycji per (portfolio, instrument); stop/ATR ustawia S08."""
+
+    __tablename__ = "position_meta"
+
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    stop_price: Mapped[Decimal | None] = mapped_column(DecimalStr)
+    entry_atr: Mapped[Decimal | None] = mapped_column(DecimalStr)
+    opened_session: Mapped[dt.date | None] = mapped_column(Date)
+    last_sell_session: Mapped[dt.date | None] = mapped_column(Date)
+
+
+class CorporateAction(Base):
+    """S06: zdarzenia korporacyjne (DIVIDEND — wartość brutto na akcję; SPLIT — współczynnik)."""
+
+    __tablename__ = "corporate_actions"
+
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)  # DIVIDEND / SPLIT
+    ex_date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    pay_date: Mapped[dt.date | None] = mapped_column(Date)
+    value: Mapped[Decimal] = mapped_column(DecimalStr)
 
 
 class PortfolioSnapshot(Base):

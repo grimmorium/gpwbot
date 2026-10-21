@@ -12,7 +12,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | S03 | Ceny: Stooq, jakość danych, ingest | done | providers/{base,prices_stooq,prices_yfinance}, quality, ingest/prices_job + config/symbol_map.yaml; 279 testów zielone (89 nowych), pokrycie modułów ≥ 90%; retry/limiter z configu; V-03 częściowo domknięte (wzorzec URL do weryfikacji — test @network) |
 | S04 | Universe, instrumenty, aliasy | done | universe.py (sync seedu + filtry), aliases.py (walidacja), config/{universe_seed,aliases}.yaml, CLI `universe --as-of`; 312 testów zielone (33 nowe); seed WIG20/mWIG40 do weryfikacji (V-05); SUSPENDED = heurystyka zerowej świecy (D-028/V-06) |
 | S05 | Wskaźniki i screener | done | features.py (wskaźniki + FeatureSet + save_features), screener.py (scoring przekrojowy + shortlista), wagi ScreenerCfg, CLI `screen`; 374 testy zielone (+62 nowe); pokrycie: features 93.5%, screener 100% |
-| S06 | Ledger, pozycje, partie FIFO | todo | zależy od: S01, S02 |
+| S06 | Ledger, pozycje, partie FIFO | done | domain.py (Side/OrderIntent/FillRecord), portfolio/{fifo,service}.py (PortfolioService: gotówka, rezerwacje, fills FIFO, T+2, dywidendy, splity, snapshoty, niezmienniki), migracja a3f5c8e2b9d4; 397 testów zielonych (+23 nowe); pokrycie fifo/service ≥ 90% |
 | S07 | Symulator wykonania | todo | zależy od: S02, S06 |
 | S08 | Risk Manager | todo | zależy od: S05, S06 |
 | S09 | Strategia bazowa, runner, raport dzienny | todo | zależy od: S05–S08 |
@@ -47,12 +47,20 @@ walidacja `aliases.yaml` oraz seedu), D-031 (`ExclusionReason` jako `StrEnum`, r
 Z S05: D-032 (skala rangi percentylowej `[1/k, 1]`, brak wartości = 0; `low_vol` ← inwersja
 `atr_pct`; wagi scoringu domyślnie po 1.0 — kalibracja poza S05), D-033 (`compute_features`
 wymaga keyword-only `calendar` — stale wg `is_fresh`; `FeatureSet.close` = surowa cena; ATR na
-surowych OHLC).
+surowych OHLC). Z S06: D-034 (`Side` w `domain`, reeksport w `costs`), D-035 (`tax_lots.buy_price`
+= dokładny koszt jednostkowy bez kwantyzacji — tożsamość P/L), D-036 (wpłata początkowa jako wpis
+DEPOSIT; `available_from` na każdym wpisie; rezerwacje w `orders.reserved_amount`), D-037
+(idempotencja zdarzeń korporacyjnych po `ref`; marker ADJUSTMENT o kwocie 0 dla splitów; data bytu
+dywidendy z replayu fills), D-038 (strażnik ujemnej gotówki w `apply_fill`; `positions` wymaga cen
+wszystkich pozycji; equity z całej gotówki).
 
 ## Dług techniczny
 
 - Sekcje `baseline`, `text`, `eval` w konfiguracji to placeholdery — rozbudowa w S09/
   S10–S12/S14 (D-001); sekcja `screener` rozszerzona o wagi scoringu w S05.
+- Brak źródła danych dla tabeli `corporate_actions` (dywidendy/splity): wiersze tworzone są
+  ręcznie lub przez przyszły adapter; `apply_corporate_actions` działa tylko na tym, co jest w
+  bazie. Do podpięcia przed startem forward testu (S15 albo wcześniej).
 - CLI `screen` bez pozycji i eventów (S05): shortlista = TOP_SCORE, bo brak ledgeru (S06)
   i tekstów (S10); podpiąć `positions`/`event_tickers` przy orkiestracji runu (S09/S13).
 - Wagi screenera domyślnie po 1.0 (D-032) — kalibracja przed startem forward testu /
