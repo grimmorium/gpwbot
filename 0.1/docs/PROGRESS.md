@@ -13,7 +13,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | S04 | Universe, instrumenty, aliasy | done | universe.py (sync seedu + filtry), aliases.py (walidacja), config/{universe_seed,aliases}.yaml, CLI `universe --as-of`; 312 testów zielone (33 nowe); seed WIG20/mWIG40 do weryfikacji (V-05); SUSPENDED = heurystyka zerowej świecy (D-028/V-06) |
 | S05 | Wskaźniki i screener | done | features.py (wskaźniki + FeatureSet + save_features), screener.py (scoring przekrojowy + shortlista), wagi ScreenerCfg, CLI `screen`; 374 testy zielone (+62 nowe); pokrycie: features 93.5%, screener 100% |
 | S06 | Ledger, pozycje, partie FIFO | done | domain.py (Side/OrderIntent/FillRecord), portfolio/{fifo,service}.py (PortfolioService: gotówka, rezerwacje, fills FIFO, T+2, dywidendy, splity, snapshoty, niezmienniki), migracja a3f5c8e2b9d4; 397 testów zielonych (+23 nowe); pokrycie fifo/service ≥ 90%; przegląd S06 (B1–B12) poprawiony 2026-10-22 — D-039/D-040, +8 testów |
-| S07 | Symulator wykonania | todo | zależy od: S02, S06 |
+| S07 | Symulator wykonania | done | execution/{orders,fill_model,sim_broker}.py (OrderType/Status/Reason, `simulate_fill` + `rejection_reason`, SimBroker submit/process_session), kolumny `orders.processed_session/reason` + rewizja 9b4d6e1c5a83, `CostsCfg.max_volume_participation_pct`; 455 testów zielonych (49 nowych w tests/execution); pokrycie fill_model 100% (próg 90%), sim_broker 97%; scenariusz demonstracyjny kupno/wygaśnięcie/sprzedaż + test własnościowy |
 | S08 | Risk Manager | todo | zależy od: S05, S06 |
 | S09 | Strategia bazowa, runner, raport dzienny | todo | zależy od: S05–S08 |
 | S10 | Teksty: RSS, ESPI, dedupe, linker | todo | zależy od: S01, S04 |
@@ -54,7 +54,15 @@ DEPOSIT; `available_from` na każdym wpisie; rezerwacje w `orders.reserved_amoun
 dywidendy z replayu fills), D-038 (strażnik ujemnej gotówki w `apply_fill`; `positions` wymaga cen
 wszystkich pozycji; equity z całej gotówki), D-039 (dywidenda netto na sumie pozycji — jedno
 zaokrąglenie do 0.01, poprawka B2 przeglądu S06), D-040 (`reserve()` tylko dla BUY; limit
-rezerwacji egzekwuje S07).
+rezerwacji egzekwuje S07). Z S07: D-041 (`CostsCfg.max_volume_participation_pct = 5` — nowe pole
+konfiguracji, wartość do weryfikacji V-07), D-042 (wejście `simulate_fill`: czysty `OrderIntent`;
+powody przez publiczne `rejection_reason`), D-043 (limit wolumenu: granica dozwolona;
+`volume=None` nie blokuje), D-044 (przycięcie do limitu po zaokrągleniu do ticka, bez ponownego
+zaokrąglania), D-045 (`submit`: LIMIT_AT_OPEN wymaga dodatniego limitu dla obu stron; odrzucone
+zlecenia w audycie jako REJECTED), D-046 (semantyka `orders.reason`: teza → kod powodu przy
+REJECTED/EXPIRED), D-047 (jednorazowa ważność zlecenia: dokładnie jedno przetworzenie, idempotencja
+`process_session`), D-048 (świeca = pierwszy wiersz per instrument rosnąco po `source`; grupa ticków
+zawsze `"default"`).
 
 ## Dług techniczny
 
@@ -86,8 +94,15 @@ rezerwacji egzekwuje S07).
   spółek w S04 to wystarcza, ale backfill może chcieć wersję wsadową.
 - Tabela ticków w `config/tick_sizes.yaml` ma wartości przykładowe — do zastąpienia danymi z
   tabeli załącznika UE 2017/588 po domknięciu V-02 (D-015).
-- Faza dogrywki GPW 17:00–17:05 nie jest modelowana w `SessionTimes` (S02, D-013) — doprecyzować
-  przy fill model (S07), jeśli będzie miała znaczenie dla realizacji.
+- Faza dogrywki GPW 17:00–17:05 nie jest modelowana w `SessionTimes` (S02, D-013) — domknięte w S07:
+  realizacja LIMIT_AT_OPEN następuje na otwarciu sesji (9:00), więc dogrywka nie wpływa na fill
+  model; pozostaje otwarta tylko dla ewentualnych zleceń po godzinach (poza zakresem v1).
+- `instruments` nie przechowuje `tick_group` (`SeedInstrument.tick_group` z S04 nie jest
+  persystowany) — fill model używa zawsze grupy `"default"` (D-048); obsługa wielu grup wymaga
+  kolumny + migracji.
+- Przycięcie ceny do limitu po zaokrągleniu do ticka bez ponownego zaokrąglania (D-044): off-tickowy
+  limit dałby fill poza siatką ticków — w praktyce limity są na ticku (reguła sizingu S08), więc
+  przypadek nie występuje; do rozpatrzenia, jeśli pojawi się źródło limitów spoza siatki.
 - Domyślna ścieżka nadpisań kalendarza jest względem CWD (D-017); po wprowadzeniu pola w
   `AppContext`/`PathsCfg` warto ją przenieść do konfiguracji jawnie.
 

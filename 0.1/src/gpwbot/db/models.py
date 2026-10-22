@@ -187,6 +187,10 @@ class Order(Base):
     valid_from_session: Mapped[dt.date] = mapped_column(Date)
     # S06: aktywna rezerwacja gotówki (reserve/release); NULL = brak rezerwacji.
     reserved_amount: Mapped[Decimal | None] = mapped_column(DecimalStr)
+    # S07: sesja, w której zlecenie zostało przetworzone (fill/wygaśnięcie); idempotencja.
+    processed_session: Mapped[dt.date | None] = mapped_column(Date)
+    # S07: powód odrzucenia/wygaśnięcia (kod `OrderReason`) albo teza zlecenia przy FILLED.
+    reason: Mapped[str | None] = mapped_column(Text)
 
 
 class Fill(Base):

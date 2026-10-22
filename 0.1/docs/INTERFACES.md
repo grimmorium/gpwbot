@@ -437,3 +437,69 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   fills, rezerwacje, T+2/weekend/święto przez nadpisanie kalendarza, dywidendy, splity, snapshoty,
   izolacja portfeli), `test_properties.py` (`hypothesis`: losowe ciągi kupna/sprzedaży —
   niezmienniki po każdym kroku, tożsamość P/L z odchyleniem ≤ 0.01).
+
+## S07
+
+### `gpwbot.execution.orders` (enumy)
+
+- `OrderType` — StrEnum: `LIMIT_AT_OPEN = "limit_at_open"` (jedyne typy v1; wartości małe litery,
+  wzorzec D-031).
+- `OrderStatus` — StrEnum: `PENDING`, `FILLED`, `EXPIRED`, `REJECTED`, `CANCELLED`.
+- `OrderReason` — StrEnum (kody do `orders.reason`): `NO_CASH`, `NO_POSITION`, `LIMIT_NOT_MET`,
+  `VOLUME_LIMIT`, `NO_BAR`.
+
+### `gpwbot.execution.fill_model` (czysta logika)
+
+- `FillResult(price, qty, commission, slippage_cost)` — frozen dataclass; kwoty `Decimal`; pełna
+  ilość (bez częściowych realizacji).
+- `simulate_fill(order: OrderIntent, bar: PriceBar, costs_cfg: CostsCfg, tick_table: TickTable,
+  group="default") -> FillResult | None` — kolejność reguł: limit otwarcia (`LIMIT_NOT_MET`) →
+  udział w wolumenie sesji (`VOLUME_LIMIT`; granica dozwolona, `volume=None` nie blokuje; D-043) →
+  cena = `apply_slippage(open, side, bps)` zaokrąglone do ticka (BUY UP / SELL DOWN), przycięte do
+  limitu bez ponownego zaokrąglenia (D-044) → `commission` z `costs.commission`,
+  `slippage_cost = abs(cena − open) × qty`. `qty ≤ 0` → `ValueError`.
+- `rejection_reason(order, bar, costs_cfg) -> str | None` — powód braku filla (`LIMIT_NOT_MET` /
+  `VOLUME_LIMIT`) albo `None`; współdzieli predykaty z `simulate_fill` (spójność; D-042).
+
+### `gpwbot.execution.sim_broker`
+
+- `SessionExecutionReport(session_date, filled_order_ids=(), expired_orders=())` — frozen
+  dataclass; `filled_order_ids: tuple[int, ...]` w kolejności przetwarzania (najpierw SELL),
+  `expired_orders: tuple[tuple[int, str], ...]` = `(order_id, kod powodu)`.
+- `SimBroker(session, portfolio_service, calendar, tick_table, cfg, clock)` — metody flushują bez
+  commitu (transakcję prowadzi wywołujący):
+  - `submit(portfolio_id, run_id: int | None, intents: list[OrderIntent]) -> list[int]` — zlecenia
+    PENDING z wspólnym `valid_from_session = calendar.next_session_after(clock.now())`; BUY
+    rezerwuje `qty × limit + prowizja(qty × limit)` (brak środków → wiersz REJECTED/`NO_CASH`),
+    SELL ponad stan (posiadane − już zlecone do sprzedaży) → REJECTED/`NO_POSITION`; odrzucone
+    zostają w bazie dla audytu; nieznany ticker, `limit_price ≤ 0/None`, `qty ≤ 0` → `ValueError`
+    (D-045). Zwraca id wszystkich utworzonych wierszy w kolejności wejścia.
+  - `process_session(portfolio_id, session_date) -> SessionExecutionReport` — PENDING z
+    `valid_from ≤ session_date` i `processed_session IS NULL`; najpierw SELL, potem BUY, w obrębie
+    typu rosnąco po `id`; świeca = pierwszy wiersz `prices_daily` per instrument (rosnąco po
+    `source`; D-048); brak świecy → EXPIRED/`NO_BAR`, inaczej `simulate_fill` (grupa ticków
+    `"default"`); fill → wiersz `fills` + `apply_fill` (księguje i zwalnia rezerwację), wygaśnięcie
+    → `release`; po każdym: `processed_session = session_date` — ponowne wywołanie no-op
+    (D-047).
+
+### Konfiguracja (rozszerzenie S02)
+
+- `CostsCfg.max_volume_participation_pct: Decimal = 5` — maksymalny udział pojedynczego zlecenia w
+  wolumenie sesji (S07, fill model); jawne w `config/config.yaml`; domyślna wartość do
+  weryfikacji V-07 (D-041).
+
+### Baza danych (rozszerzenie S06)
+
+- Nowe kolumny: `orders.processed_session` (`Date`, NULL — sesja przetworzenia; idempotencja),
+  `orders.reason` (`Text` — teza zlecenia albo kod powodu REJECTED/EXPIRED; D-046).
+- Rewizja Alembic `9b4d6e1c5a83_s07_execution_simulator`.
+
+### Testy / fixture
+
+- `tests/execution/`: `test_fill_model.py` (tabela ≥ 12 przypadków czystej logiki + spójność
+  `rejection_reason`), `test_sim_broker.py` (submit: rezerwacja, NO_CASH, SELL ponad stan,
+  `valid_from_session` przed otwarciem/w trakcie/piątek wieczorem; process_session: kolejność
+  SELL→BUY, `settle_instantly` finansuje zakup vs T+2, NO_BAR, wygasanie z kodami, zwolnienie
+  rezerwacji, idempotencja, czekanie na sesję; scenariusz demonstracyjny kupno/wygaśnięcie/
+  sprzedaż), `test_sim_broker_properties.py` (`hypothesis`: losowe zlecenia i ceny —
+  `check_invariants` po każdym kroku).

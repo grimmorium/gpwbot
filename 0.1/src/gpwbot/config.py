@@ -120,6 +120,8 @@ class CostsCfg(_Cfg):
     slippage_bps: int = Field(default=15, ge=0)
     # Podatek od dywidendy (sekcja 2 Czesci I); uzywany w S07/S09 — D-019.
     dividend_tax_pct: Pct = Decimal("19")
+    # Maksymalny udział pojedynczego zlecenia w wolumenie sesji (S07, fill model) — D-041.
+    max_volume_participation_pct: Pct = Decimal("5")
 
 
 class StooqCfg(_Cfg):

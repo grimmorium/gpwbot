@@ -70,6 +70,7 @@ costs:
   commission_pct: 0.30
   commission_min_pln: 5
   slippage_bps: 15
+  max_volume_participation_pct: 5   # udział zlecenia w wolumenie sesji (S07, D-041)
 
 # Adaptery danych (S03): limity wyłącznie tutaj, nie w kodzie.
 providers:

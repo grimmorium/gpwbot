@@ -318,6 +318,56 @@ poprawka B1 przeglądu S06). Walidacji `amount ≤ cash_available` świadomie NI
 specyfikacja S06 wymaga tylko nieujemnego `cash_total`, a kontrola wystarczających środków pod
 zlecenie należy do Risk Manager (S07), który zna limit pozycji i politykę portfela.
 
+## Decyzje S07
+
+### D-041. Nowe pole konfiguracji `CostsCfg.max_volume_participation_pct` (domyślnie 5%)
+Specyfikacja S07 nazywa parametr `costs.max_volume_participation_pct`, ale w `CostsCfg` go nie
+było (`RiskCfg.max_adv_participation_pct = 5` dotyczy sizingu, nie fill model). Dodano pole z
+domyślną wartością 5% i jawnie w `config/config.yaml`. **Domyślna wartość do weryfikacji** (V-07) —
+specyfikacja jej nie podaje; wybrano spójność z `max_adv_participation_pct`.
+
+### D-042. Wejście `simulate_fill`: czysty `OrderIntent` + powody przez `rejection_reason`
+Sygnatura specyfikacji zwraca `None` bez powodu, a SimBroker musi wypełniać `orders.reason` —
+dodano publiczną czystą funkcję `rejection_reason(order, bar, costs_cfg)` współdzielącą prywatne
+predykaty `_limit_ok`/`_volume_ok` z `simulate_fill`, więc oba wyniki są zawsze spójne. Parametr
+"order" to czysty typ `domain.OrderIntent`, świeca — `db.repo.PriceBar` (frozen dataclass,
+Decimal) — fill model pozostaje wolny od bazy i I/O (A3).
+
+### D-043. Limit wolumenu: granica dozwolona; `volume=None` nie blokuje
+Brak realizacji tylko gdy `qty > volume × pct / 100` (nierówność ściśle wg specyfikacji — ilość
+dokładnie na limicie się realizuje). Gdy świeca ma `volume = None` (brak danych o obrotach),
+udziału nie da się policzyć, więc kontrola jest pomijana.
+
+### D-044. Przycięcie do limitu po zaokrągleniu do ticka (dosłownie wg specyfikacji)
+Kolejność: `apply_slippage` → `round_price` (BUY w górę / SELL w dół) → przycięcie do limitu,
+bez ponownego zaokrąglania po przycięciu. W praktyce limity są na ticku (reguła sizingu S08
+zaokrągla cenę limitu do ticka), więc cena po przycięciu też jest na ticku; off-tickowy limit
+dałby fill poza siatką — przypadek brzegowy odnotowany jako dług techniczny.
+
+### D-045. `submit`: LIMIT_AT_OPEN wymaga dodatniego limitu dla obu stron
+Jedyny typ zlecenia v1 to LIMIT_AT_OPEN, a rezerwacja BUY (`qty × limit + prowizja`) wymaga
+limitu — wymagano więc `limit_price > 0` także dla SELL; `None`/≤ 0, nieznany ticker lub
+`qty ≤ 0` → `ValueError`. Odrzucone zlecenia (NO_CASH/NO_POSITION) są zapisywane jako wiersze ze
+statusem REJECTED i kodem powodu — pełny audyt cyklu życia.
+
+### D-046. Semantyka kolumny `orders.reason`
+Przy tworzeniu przechowuje `intent.reason` (tezę zlecenia); przy REJECTED/EXPIRED nadpisywana
+jest kodem powodu (`OrderReason`); FILLED zachowuje oryginalną tezę. Typ kolumny: `Text`
+(wolny tekst — w S08 tezy będą pochodzić od LLM).
+
+### D-047. Jednorazowa ważność zlecenia: dokładnie jedno przetworzenie
+`process_session` bierze PENDING z `valid_from ≤ session_date` i `processed_session IS NULL`,
+ocenia je wobec świecy tego dnia i ustawia `processed_session = session_date` — ponowne wywołanie
+dla tej samej sesji jest no-op (idempotencja). Gdy pipeline pominie sesję (`valid_from <
+session_date`), zlecenie oceniane jest w pierwszej faktycznie przetworzonej sesji i wygasa, jeśli
+się nie zrealizuje — "ważność jeden dzień" realizowana jako co najwyżej jedna ocena.
+
+### D-048. Deterministyczny wybór świecy przy wielu źródłach; grupa ticków `default`
+`prices_daily` ma PK `(instrument_id, date, source)` — `process_session` bierze pierwszy wiersz
+per instrument rosnąco po `source` (deterministycznie, bez dodatkowej konfiguracji). Grupa ticków
+to zawsze `"default"`: tabela `instruments` nie przechowuje `tick_group` (`SeedInstrument.tick_group`
+z S04 nie jest persystowany) — obsługa wielu grup wymaga kolumny i migracji (dług techniczny).
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |
@@ -328,3 +378,4 @@ zlecenie należy do Risk Manager (S07), który zna limit pozycji i politykę por
 | V-04 | Która flaga llama.cpp steruje trybem rozumowania Qwen (`enable_thinking`?) | S11 | otwarte — config ma `thinking_extraction`/`thinking_decision` |
 | V-05 | Skład WIG20/mWIG40 w `config/universe_seed.yaml` (tickery, nazwy, sektory) | S04 | częściowo domknięte — tickery WIG20 wg sekcji "Mapa wartości spółek z WIG20" na gpw.pl (dostęp 2026-10-20); mWIG40: nazwy wg pl.wikipedia.org, tickery = mapowanie agenta; część symboli WIG20 odbiega od znanych mi nazw (TAURONPE, MODIVO, KETY, ALIOR) — do weryfikacji przed startem forward testu |
 | V-06 | Oficjalne źródło zawieszeń notowań GPW vs heurystyka zerowej świecy (D-028) | S04 | otwarte — v1 wykrywa SUSPENDED z `volume == 0` i braku obrotu na ostatniej świecy; do podpięcia oficjalnego źródła, gdy będzie dostępne |
+| V-07 | Domyślna wartość `costs.max_volume_participation_pct` (5%) — limit udziału pojedynczego zlecenia w wolumenie sesji (D-041) | S07 | otwarte — specyfikacja nie podaje wartości; wybrano 5% spójnie z `risk.max_adv_participation_pct`; do potwierdzenia przed startem forward testu |
