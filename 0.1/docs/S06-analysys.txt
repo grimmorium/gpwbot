@@ -1,0 +1,16 @@
+Analiza kodu sesji S06 - gpwbot
+
+1. [WAŻNY] src/gpwbot/costs.py (net_dividend)
+   Problem: Brak weryfikacji, czy net_dividend zaokrągla wynik do 0,01.
+   Specyfikacja wymaga: "net = gross * (1 - tax), zaokrąglone do 0,01".
+   Propozycja: Sprawdzić implementację net_dividend i dodać kwantyzację Decimal(x).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP).
+
+2. [DROBNY] src/gpwbot/portfolio/service.py (linia 345 - _position_qty_at)
+   Problem: Wydajność przy dużym wolumenie transakcji (pełny replay fills dla każdej dywidendy).
+   Propozycja: W przyszłości rozważyć przechowywanie aktualnego stanu qty w pozycji lub snapshoty.
+
+3. [DROBNY] tests/portfolio/test_service.py
+   Problem: Brak testu na błąd ułamkowych akcji przy splicie.
+   Propozycja: Dodać test, w którym współczynnik splita * qty nie jest liczbą całkowitą i sprawdzić rzucenie LedgerError.
+
+4. [KRYTYCZNY] - Brak błędów krytycznych. Implementacja jest spójna z zasadami A3 (Decimal) i specyfikacją S06.

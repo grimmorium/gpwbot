@@ -484,6 +484,38 @@ def test_split_2do1(env):
     assert (again.qty, str(again.avg_cost)) == (200, "5.025")
 
 
+def test_split_ulamkowe_akcje_rzuca_ledger_error(env):
+    """Split, który daje ułamkową liczbę akcji, musi rzucić LedgerError."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    order = _order(s, pid, inst.id, "BUY", 100, D("2026-10-14"))
+    fill = _fill(s, order, D("2026-10-14"), Decimal("10.00"), 100, Decimal("5.00"))
+    svc.apply_fill(fill.id)
+
+    # Split 1.5:1 dla 100 akcji = 150 (OK), ale dla 101 akcji = 151.5 (Błąd)
+    # Zmienimy ilość w partii bezpośrednio, by wymusić błąd
+    lot = s.query(TaxLot).one()
+    lot.qty_remaining = 101
+    s.flush()
+
+    s.add(
+        CorporateAction(
+            instrument_id=inst.id,
+            type="SPLIT",
+            ex_date=D("2026-10-16"),
+            pay_date=None,
+            value=Decimal("1.5"),
+        )
+    )
+    s.flush()
+
+    with pytest.raises(LedgerError, match="dałaby ułamkową liczbę akcji"):
+        svc.apply_corporate_actions(pid, D("2026-10-16"))
+
+
 # --- pozycje, equity, snapshoty -------------------------------------------------------------
 
 
