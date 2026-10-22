@@ -301,6 +301,23 @@ błędy księgowe dają odchylenie ≥ 0,01.
   rozliczenia T+2 nadal są aktywami); `held_sessions = count_sessions(opened_session, data
   warszawska zegara)`; `peak_equity` wyłącznie z zapisanych snapshotów (`None`, gdy brak).
 
+### D-039. Dywidenda netto liczona na sumie pozycji (jedno zaokrąglenie do 0.01)
+Specyfikacja ("net = gross × (1 − tax), zaokrąglone do 0,01") nie precyzuje, czy kwantyzacja
+dotyczy akcji (`corporate_actions.value` to brutto na akcję) czy całej pozycji. Wybrano liczenie
+na sumie: `net_dividend(value × qty_held, tax)` — jedno zaokrąglenie HALF_UP do 0.01 (poprawka
+B2 przeglądu S06). Wariant per-akcja (zaokrąglenie przed mnożeniem przez ilość) dawałby
+systematyczne odchylenie rosnące z wielkością pozycji: błąd do ~0.005 PLN/akcję × qty; przykład:
+0.33/akc., 19%, 10 000 akcji → 2700.00 zamiast 2673.00 (rozbieżność 27.00). W praktyce maklerskiej
+podatek liczy się od sumy brutto i zaokrągla do grosza transakcję; błąd wersji na sumie jest
+ograniczony do ≤ 0.005 PLN niezależnie od wielkości pozycji.
+
+### D-040. `reserve()` tylko dla zleceń BUY; limit rezerwacji egzekwuje S07
+`reserve(pid, order_id, amount)` rzuca `LedgerError`, gdy strona zlecenia ≠ BUY — serwis nie może
+tworzyć stanu naruszającego własny niezmiennik (`check_invariants`: "rezerwacje tylko dla BUY";
+poprawka B1 przeglądu S06). Walidacji `amount ≤ cash_available` świadomie NIE ma w serwisie:
+specyfikacja S06 wymaga tylko nieujemnego `cash_total`, a kontrola wystarczających środków pod
+zlecenie należy do Risk Manager (S07), który zna limit pozycji i politykę portfela.
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |

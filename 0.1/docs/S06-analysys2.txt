@@ -1,0 +1,138 @@
+Analiza kodu sesji S06 - gpwbot (przegląd ponowny)
+
+Data: 2026-10-22
+Stan: HEAD = 41f21c6 "S06 analysys 1" (poprzednia analiza + nowy test split); kod S06 z commitu 185d0dd.
+Weryfikacja: `pytest tests/portfolio/ -q` -> 24 passed (w tym test dodany w commitcie analizy).
+
+=== A. Status punktów poprzedniej analizy (docs/S06-analysys.txt) ===
+
+A1. [ZAMKNIĘTY] Punkt 1 (WAŻNY): czy net_dividend zaokrągla do 0,01?
+    Zweryfikowano: src/gpwbot/costs.py linia 78 — `return net.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)`.
+    Zaokrąglenie jest poprawne (HALF_UP, 0.01); poprawka w costs.py niepotrzebna.
+    Uwaga: znaleziono problem pokrewny po stronie serwisu — patrz B2 (zaokrąglenie per akcja vs na sumie).
+
+A2. [OTWARTY] Punkt 2 (DROBNY): wydajność `_position_qty_at` (pełny replay fills dla każdej dywidendy).
+    Nadal aktualne: src/gpwbot/portfolio/service.py linia 479–494. Bez zmian; pozostaje jako dług techniczny.
+
+A3. [ZAMKNIĘTY] Punkt 3 (DROBNY): brak testu ułamkowych akcji przy splicie.
+    Poprawione w commitcie 41f21c6: tests/portfolio/test_service.py linia 487
+    (`test_split_ulamkowe_akcje_rzuca_ledger_error`); test przechodzi. Uwagi stylistyczne — patrz B9.
+
+=== B. Nowe problemy ===
+
+B1. [WAŻNY] src/gpwbot/portfolio/service.py, `reserve()` (linia 115–126)
+    Problem: brak sprawdzenia strony zlecenia. Metoda ustawia rezerwację na dowolnym istniejącym
+    zleceniu portfela — także SELL. Tymczasem własny niezmiennik `check_invariants` (linia 343–350)
+    traktuje "rezerwacje przy zleceniach innych niż BUY" jako naruszenie, czyli serwis potrafi
+    utworzyć stan, który sam uznaje za błędny. Brak testu pokrywającego ten przypadek.
+    Propozycja: po odnalezieniu zlecenia dodać:
+        if order.side != "BUY":
+            raise LedgerError(f"zlecenie {order_id} to {order.side}; rezerwacja tylko dla BUY")
+    oraz test: `reserve` na zleceniu SELL rzuca LedgerError.
+
+B2. [WAŻNY] src/gpwbot/portfolio/service.py, dywidenda (linia 283–286)
+    Problem: kwota netto liczona per akcja i zaokrąglana PRZED pomnożeniem przez ilość:
+        net_per_share = net_dividend(action.value, tax)   # tu zaokrąglenie do 0.01
+        _entry(..., net_per_share * qty_held, ...)
+    Specyfikacja ("net = gross × (1 − tax), zaokrąglone do 0,01") nie precyzuje, czy zaokrąglenie
+    dotyczy akcji czy całej pozycji. Obecna wersja daje systematyczne odchylenie rosnące z ilością:
+    błąd do ~0.005 PLN na akcję × qty. Przykład: dywidenda 0.33/akcję, podatek 19%, 10 000 akcji ->
+    per-akcja: 0.2673 → 0.27 → 2700.00 PLN; na sumie: 3300 × 0.81 = 2673.00 PLN (rozbieżność 27.00).
+    W praktyce maklerskiej podatek liczy się od sumy brutto i zaokrągla do grosza transakcję — wersja
+    na sumie jest bliższa praktyce i ogranicza błąd do ≤ 0.005 PLN niezależnie od wielkości pozycji.
+    Propozycja: `net_total = net_dividend(action.value * qty_held, tax)` (jedno zaokrąglenie) LUB
+    udokumentować wybór w docs/decisions.md i dodać test pinujący obecne zachowanie.
+    Istniejący test (162.00 dla 2.00 × 100 akcji) przechodzi z oboma wariantami — zmiana go nie łamie.
+
+B3. [WAŻNY] tests/portfolio/test_service.py, `test_dywidenda_netto_i_pay_date` (linia 359–401)
+    Problem: specyfikacja wymaga testu "pominięcie pozycji kupionej w dniu ex_date". Test kupuje BBB
+    w dniu ex_date (linia 376), ale nigdy nie tworzy CorporateAction dla BBB — logika daty rejestrowej
+    (`previous_session`) nie jest sprawdzana na tej pozycji, a brak asercji, że BBB nic nie dostaje.
+    Nazwa i komentarz sugerują pokrycie, którego test w rzeczywistości nie daje (asercja `len(divs) == 1`
+    jest trywialnie spełniona, bo akcja istnieje tylko dla AAA).
+    Propozycja: dodać drugą akcję DIVIDEND dla BBB z tym samym ex_date (np. value=3.00) i asercje:
+    `applied == 1` oraz dokładnie jedna wpłata DIVIDEND o kwocie 162.00 (za AAA).
+
+B4. [DROBNY] src/gpwbot/portfolio/service.py, `apply_fill` (linia 156 i 167)
+    Problem: martwy kod — `now = self._clock.now()` na początku metody oraz `_ = now` na końcu;
+    wartość nie jest nigdzie używana.
+    Propozycja: usunąć obie linie.
+
+B5. [DROBNY] src/gpwbot/portfolio/service.py, `_position_qty_at` (linia 494)
+    Problem: `return max(qty, 0)` cicho przycina ujemny wynik replayu (sprzedaż więcej niż kupno).
+    Przy spójnym ledgerze nie wystąpi; przy korupcji danych maskuje błąd zamiast go zgłosić.
+    Propozycja: dla qty < 0 rzucić LedgerError (wczesne wykrycie niespójności); dodatkowo pozostaje
+    uwaga wydajnościowa z poprzedniej analizy (A2).
+
+B6. [DROBNY] src/gpwbot/portfolio/service.py, dywidenda (linia 284)
+    Problem: `pay_date = action.pay_date if ... else action.ex_date` — specyfikacja definiuje tylko
+    "available_from = pay_date"; zachowanie dla NULL nie jest sprecyzowane.
+    Propozycja: udokumentować domyślne (ex_date) w docs/decisions.md albo wymagać pay_date != NULL
+    przy DIVIDEND (walidacja + test).
+
+B7. [DROBNY] src/gpwbot/portfolio/service.py, `_apply_sell` (linia 389–410)
+    Problem: dwa identyczne SELECT-y na tax_lots — pierwszy buduje czyste widoki `Lot`, drugi pobiera
+    encje ORM do mutacji.
+    Propozycja: jedno zapytanie po encjach; pobrać je raz i w pętli zmapować na `Lot(...)` — czyściej i szybciej.
+
+B8. [DROBNY] src/gpwbot/portfolio/service.py, gałąź SPLIT (linia 291–315)
+    Problem: mutacje partii wykonują się sekwencyjnie przed wpisem ADJUSTMENT; gdy kolejna partia
+    rzuca LedgerError (ułamkowa liczba akcji), wcześniejsze zmiany pozostają w sesji (bez flusha) i są
+    poprawne tylko, jeśli wywołujący cofnie transakcję. Kontrakt serwisu ("transakcję prowadzi
+    wywołujący") to dopuszcza — testy własnościowe używają `begin_nested` — ale bezpośrednie
+    wywołanie bez savepointa jest kruche.
+    Propozycja: najpierw zwalidować wszystkie partie (pętla tylko z obliczeniami), potem mutować;
+    ewentualnie otoczyć gałąź savepointem.
+
+B9. [DROBNY] tests/portfolio/test_service.py, `test_split_ulamkowe_akcje_rzuca_ledger_error`
+   (linia 487–521) — test dodany w commitcie analizy 41f21c6
+    Problem: (a) wymusza niemożliwy stan przez bezpośrednią mutację bazy (`lot.qty_remaining = 101`,
+    linia 500–502), choć naturalny scenariusz to po prostu kupno 101 akcji na starcie (nieparzysta
+    ilość × współczynnik 1.5 → ułamek); (b) `s.query(TaxLot).one()` zakłada dokładnie jedną partię w
+    całej sesji — pozostałe testy filtrują po portfolio_id; (c) import PortfolioDef w ciele funkcji
+    (spójne z resztą pliku, ale można podnieść na poziom modułu we wszystkich testach).
+    Propozycja: przepisać scenariusz przez BUY 101 akcji bez mutacji bazy; filtrowanie po portfolio_id;
+    opcjonalnie asercja, że po błędzie nie powstał wpis ADJUSTMENT.
+
+B10. [DROBNY] Brakujące przypadki brzegowe w testach
+    Problem: (a) tests/portfolio/test_fifo.py — brak testu konsumpcji dokładnie równej sumie partii
+    (powinna się udać) oraz pustej listy partii z qty > 0 (LedgerError); (b) test_service.py — brak
+    asercji nadpisania snapshotu dla tej samej daty (spec: "nadpisując po dacie"); (c) brak testu
+    dywidendy z pay_date = NULL (fallback z B6); (d) nieprzetestowane ścieżki błędów `apply_fill`:
+    nieistniejący fill_id, nieznaną wartość order.side; (e) SELL w dniu niesesyjnym → LedgerError
+    z `_settlement_date` (linia 433–442).
+    Propozycja: dodać wymienione testy.
+
+B11. [DROBNY] tests/portfolio/test_service.py, `test_positions_pola_i_held_sessions` (linia 539–540)
+    Problem: mylący komentarz — "zegar: środa 2026-10-14", choć początkowy zegar to czwartek
+    2026-10-15; dalsza część ("czw 14.10? nie —") jest niezrozumiała.
+    Propozycja: poprawić komentarz na faktyczny przebieg (kupno czw 14.10, zegar piątek 15.10 → held_sessions = 1).
+
+B12. [DROBNY] src/gpwbot/portfolio/service.py, `reserve()` (linia 115–126)
+    Problem: brak walidacji amount ≤ cash_available — można zarezerwować więcej niż dostępna gotówka
+    i uzyskać ujemne cash_available. Specyfikacja wymaga tylko nieujemnego cash_total, więc to poza
+    zakresem S06; kontrola należy do Risk Manager (S07).
+    Propozycja: udokumentować w docs/decisions.md, że limit rezerwacji egzekwuje S07 (albo dodać check).
+
+=== C. Pokrycie specyfikacji — zweryfikowane OK ===
+
+- domain.py: Side, OrderIntent(ticker, side, qty, limit_price, reason), FillRecord — zgodne ze specyfikacją.
+- Migracja a3f5c8e2b9d4: position_meta i corporate_actions (PK wg specy), fills.realized_pnl,
+  cash_ledger.available_from; dodatkowo orders.reserved_amount (wymagane przez API reserve/release).
+- FIFO: kolejność (buy_date, id); LedgerError gdy qty > suma; unit_cost = cena + prowizja/qty w tax_lots.
+- apply_fill BUY/SELL: wpisy BUY i COMMISSION / SELL i COMMISSION, zwolnienie rezerwacji, opened_session
+  tylko dla nowej pozycji, realized_pnl = przychód − koszt partii − prowizja sprzedaży, last_sell_session.
+- T+2 przez kalendarz (czwartek → poniedziałek; święto przesuwa termin), settle_instantly — testy pokrywają.
+- Dywidenda: data rejestrowa = sesja ściśle przed ex_date (`previous_session` — bez look-ahead);
+  idempotencja po ref; wpływ od pay_date. Split: tylko partie kupione przed ex_date, ułamek → LedgerError,
+  marker ADJUSTMENT o kwocie 0, idempotentne.
+- Niezmienniki: cash_total >= 0, partie > 0, SELL z realized_pnl, rezerwacje tylko BUY (patrz B1).
+- Pieniądze wyłącznie Decimal; czas świadomy strefy (Clock + konwersja do Europe/Warsaw na brzegu);
+  brak float w logice portfela.
+
+=== D. Podsumowanie ===
+
+Krytyczne: brak.
+Ważne: B1, B2, B3.
+Drobne: B4–B12 (w tym A2 z poprzedniej analizy).
+Testy: 24/24 zielone; kod nie był zmieniany w trakcie tego przeglądu.

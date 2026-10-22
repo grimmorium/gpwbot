@@ -12,7 +12,7 @@ Statusy: `todo` / `in-progress` / `done`. Aktualizowany na końcu każdej sesji 
 | S03 | Ceny: Stooq, jakość danych, ingest | done | providers/{base,prices_stooq,prices_yfinance}, quality, ingest/prices_job + config/symbol_map.yaml; 279 testów zielone (89 nowych), pokrycie modułów ≥ 90%; retry/limiter z configu; V-03 częściowo domknięte (wzorzec URL do weryfikacji — test @network) |
 | S04 | Universe, instrumenty, aliasy | done | universe.py (sync seedu + filtry), aliases.py (walidacja), config/{universe_seed,aliases}.yaml, CLI `universe --as-of`; 312 testów zielone (33 nowe); seed WIG20/mWIG40 do weryfikacji (V-05); SUSPENDED = heurystyka zerowej świecy (D-028/V-06) |
 | S05 | Wskaźniki i screener | done | features.py (wskaźniki + FeatureSet + save_features), screener.py (scoring przekrojowy + shortlista), wagi ScreenerCfg, CLI `screen`; 374 testy zielone (+62 nowe); pokrycie: features 93.5%, screener 100% |
-| S06 | Ledger, pozycje, partie FIFO | done | domain.py (Side/OrderIntent/FillRecord), portfolio/{fifo,service}.py (PortfolioService: gotówka, rezerwacje, fills FIFO, T+2, dywidendy, splity, snapshoty, niezmienniki), migracja a3f5c8e2b9d4; 397 testów zielonych (+23 nowe); pokrycie fifo/service ≥ 90% |
+| S06 | Ledger, pozycje, partie FIFO | done | domain.py (Side/OrderIntent/FillRecord), portfolio/{fifo,service}.py (PortfolioService: gotówka, rezerwacje, fills FIFO, T+2, dywidendy, splity, snapshoty, niezmienniki), migracja a3f5c8e2b9d4; 397 testów zielonych (+23 nowe); pokrycie fifo/service ≥ 90%; przegląd S06 (B1–B12) poprawiony 2026-10-22 — D-039/D-040, +8 testów |
 | S07 | Symulator wykonania | todo | zależy od: S02, S06 |
 | S08 | Risk Manager | todo | zależy od: S05, S06 |
 | S09 | Strategia bazowa, runner, raport dzienny | todo | zależy od: S05–S08 |
@@ -52,7 +52,9 @@ surowych OHLC). Z S06: D-034 (`Side` w `domain`, reeksport w `costs`), D-035 (`t
 DEPOSIT; `available_from` na każdym wpisie; rezerwacje w `orders.reserved_amount`), D-037
 (idempotencja zdarzeń korporacyjnych po `ref`; marker ADJUSTMENT o kwocie 0 dla splitów; data bytu
 dywidendy z replayu fills), D-038 (strażnik ujemnej gotówki w `apply_fill`; `positions` wymaga cen
-wszystkich pozycji; equity z całej gotówki).
+wszystkich pozycji; equity z całej gotówki), D-039 (dywidenda netto na sumie pozycji — jedno
+zaokrąglenie do 0.01, poprawka B2 przeglądu S06), D-040 (`reserve()` tylko dla BUY; limit
+rezerwacji egzekwuje S07).
 
 ## Dług techniczny
 

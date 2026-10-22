@@ -85,3 +85,19 @@ def test_fifo_kolejnosc_przy_remisie_dat():
     ]
     out = consume_lots(lots, 60)
     assert [(c.lot_id, c.qty) for c in out] == [(5, 40), (7, 20)]
+
+
+def test_fifo_sprzedaz_dokladnie_suma_partii():
+    """Konsumpcja równa sumie partii zużywa wszystkie partie."""
+    lots = [
+        _lot(1, "2026-10-12", 100, "10.00"),
+        _lot(2, "2026-10-14", 50, "12.00"),
+    ]
+    out = consume_lots(lots, 150)
+    assert [(c.lot_id, c.qty) for c in out] == [(1, 100), (2, 50)]
+
+
+def test_fifo_puste_partie_rzuca_ledger_error():
+    """Brak partii przy qty > 0 → LedgerError."""
+    with pytest.raises(LedgerError):
+        consume_lots([], 1)

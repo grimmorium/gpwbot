@@ -121,6 +121,10 @@ class PortfolioService:
             raise LedgerError(
                 f"zlecenie {order_id} nie istnieje w portfelu {pid}; rezerwacja niemożliwa"
             )
+        if order.side != "BUY":
+            raise LedgerError(
+                f"zlecenie {order_id} to {order.side}; rezerwacja tylko dla BUY (D-040)"
+            )
         order.reserved_amount = amount
         self._s.flush()
 
@@ -153,7 +157,6 @@ class PortfolioService:
             raise LedgerError(f"zlecenie {order.id}: nieznana strona '{order.side}'") from exc
 
         pid, inst_id = order.portfolio_id, order.instrument_id
-        now = self._clock.now()
         if side is Side.BUY:
             self._apply_buy(pid, inst_id, fill)
         else:
@@ -164,7 +167,6 @@ class PortfolioService:
                 f"portfel {pid}: księgowanie filla {fill_id} dałoby ujemną gotówkę "
                 f"({self.cash_total(pid)})"
             )
-        _ = now
 
     def positions(self, pid: int, prices: Mapping[str, Decimal]) -> list[Position]:
         """Pozycje portfela (suma partii per instrument) wycenione po `prices` (ticker→cena)."""
@@ -280,11 +282,10 @@ class PortfolioService:
                 qty_held = self._position_qty_at(pid, action.instrument_id, record_date)
                 if qty_held == 0:
                     continue
-                net_per_share = net_dividend(action.value, self._cfg.costs.dividend_tax_pct)
+                # Netto na sumie pozycji (value × qty) z jednym zaokrągleniem do 0.01 (D-039).
+                net_total = net_dividend(action.value * qty_held, self._cfg.costs.dividend_tax_pct)
                 pay_date = action.pay_date if action.pay_date is not None else action.ex_date
-                self._entry(
-                    pid, "DIVIDEND", net_per_share * qty_held, available_from=pay_date, ref=ref
-                )
+                self._entry(pid, "DIVIDEND", net_total, available_from=pay_date, ref=ref)
             elif action.type == "SPLIT":
                 ref = f"SPLIT:{action.instrument_id}:{action.ex_date.isoformat()}"
                 if self._has_entry_ref(pid, ref):
@@ -302,13 +303,17 @@ class PortfolioService:
                         TaxLot.buy_date < action.ex_date,
                     )
                 ).all()
+                # Najpierw walidacja wszystkich partii — błąd nie zostawia częściowych mutacji.
+                planned: list[tuple[TaxLot, int]] = []
                 for lot in lots:
                     new_qty = Decimal(lot.qty_remaining) * factor
                     if new_qty != new_qty.to_integral_value():
                         raise LedgerError(
                             f"split {ref}: partia {lot.id} dałaby ułamkową liczbę akcji ({new_qty})"
                         )
-                    lot.qty_remaining = int(new_qty)
+                    planned.append((lot, int(new_qty)))
+                for lot, split_qty in planned:
+                    lot.qty_remaining = split_qty
                     lot.buy_price = lot.buy_price / factor
                 self._entry(pid, "ADJUSTMENT", ZERO, available_from=action.ex_date, ref=ref)
             else:
@@ -387,33 +392,32 @@ class PortfolioService:
             meta.opened_session = fill.session_date
 
     def _apply_sell(self, pid: int, inst_id: int, fill: Fill) -> None:
-        rows = self._s.execute(
-            select(TaxLot.id, TaxLot.buy_date, TaxLot.qty_remaining, TaxLot.buy_price).where(
-                TaxLot.portfolio_id == pid,
-                TaxLot.instrument_id == inst_id,
-                TaxLot.qty_remaining > 0,
-            )
-        ).all()
-        lots = [
-            Lot(id=lot_id, buy_date=d, qty_remaining=q, unit_cost=c) for lot_id, d, q, c in rows
-        ]
-        consumptions = consume_lots(lots, fill.qty)
-        cost_basis = sum((c.qty * c.unit_cost for c in consumptions), ZERO)
-        proceeds = fill.price * fill.qty
-        fill.realized_pnl = proceeds - cost_basis - fill.commission
-
-        lot_rows = {
-            lot.id: lot
-            for lot in self._s.scalars(
+        lot_rows = list(
+            self._s.scalars(
                 select(TaxLot).where(
                     TaxLot.portfolio_id == pid,
                     TaxLot.instrument_id == inst_id,
                     TaxLot.qty_remaining > 0,
                 )
             ).all()
-        }
+        )
+        lots = [
+            Lot(
+                id=lot.id,
+                buy_date=lot.buy_date,
+                qty_remaining=lot.qty_remaining,
+                unit_cost=lot.buy_price,
+            )
+            for lot in lot_rows
+        ]
+        consumptions = consume_lots(lots, fill.qty)
+        cost_basis = sum((c.qty * c.unit_cost for c in consumptions), ZERO)
+        proceeds = fill.price * fill.qty
+        fill.realized_pnl = proceeds - cost_basis - fill.commission
+
+        by_id = {lot.id: lot for lot in lot_rows}
         for consumption in consumptions:
-            lot = lot_rows[consumption.lot_id]
+            lot = by_id[consumption.lot_id]
             if consumption.qty >= lot.qty_remaining:
                 self._s.delete(lot)
             else:
@@ -491,4 +495,9 @@ class PortfolioService:
         qty = 0
         for fill_qty, side in rows:
             qty += fill_qty if side == "BUY" else -fill_qty
-        return max(qty, 0)
+        if qty < 0:
+            raise LedgerError(
+                f"portfel {pid}, instrument {inst_id}: replay fills daje ujemny stan ({qty}) "
+                f"dla daty {on_date.isoformat()}; ledger niespójny"
+            )
+        return qty

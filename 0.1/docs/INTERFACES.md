@@ -397,7 +397,7 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
     on_date` minus aktywne rezerwacje (`orders.reserved_amount`).
   - `reserve(pid, order_id, amount)` / `release(order_id)` — blokada/zwolnienie gotówki pod
     zlecenie; nadpisanie dozwolone, release idempotentny; ujemna kwota → `ValueError`, cudze lub
-    nieistniejące zlecenie → `LedgerError`.
+    nieistniejące zlecenie oraz strona inna niż BUY → `LedgerError` (D-040).
   - `apply_fill(fill_id)` — BUY: nowa partia (`unit_cost = cena + prowizja/qty`), wpisy BUY i
     COMMISSION (wpływ od daty sesji), zwolnienie rezerwacji, `opened_session` przy nowej pozycji;
     SELL: konsumpcja FIFO, wpis SELL i COMMISSION (wpływ od daty rozliczenia T+N przez kalendarz,
@@ -414,8 +414,10 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   - `apply_corporate_actions(pid, as_of: dt.date) -> int` — dywidendy i splity z `ex_date <=
     as_of`; idempotentne po `ref` (`DIV:<inst>:<ex>` / marker ADJUSTMENT o kwocie 0 dla
     `SPLIT:<inst>:<ex>`; D-037); dywidenda: data bytu = sesja przed `ex_date`, stan z replayu
-    fills, netto po podatku z configu, wpływ od `pay_date`; split: partie kupione przed `ex_date`
-    (×współczynnik, koszt ÷), wynik ułamkowy → `LedgerError`. Zwraca liczbę zastosowanych akcji.
+    fills (ujemny stan → `LedgerError`), netto na sumie pozycji — jedno zaokrąglenie do 0.01
+    (D-039) — wpływ od `pay_date`; split: partie kupione przed `ex_date` (×współczynnik, koszt ÷;
+    walidacja wszystkich partii przed mutacjami), wynik ułamkowy → `LedgerError`. Zwraca liczbę
+    zastosowanych akcji.
   - `check_invariants(pid)` — gotówka ≥ 0; partie > 0; każda sprzedaż ma `realized_pnl`;
     rezerwacje tylko dla BUY; naruszenie → `LedgerError` (D-038).
 

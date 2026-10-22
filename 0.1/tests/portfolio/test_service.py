@@ -130,6 +130,18 @@ def test_cash_available_minus_rezerwacje(env):
         svc.reserve(other, order.id, Decimal("100"))
 
 
+def test_reserve_sprzedaz_rzuca_ledger_error(env):
+    """Rezerwacja gotówki jest możliwa tylko dla zleceń BUY (D-040)."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    order = _order(s, pid, inst.id, "SELL", 10, D("2026-10-15"))
+    with pytest.raises(LedgerError):
+        svc.reserve(pid, order.id, Decimal("100"))
+
+
 # --- fills: BUY / SELL -------------------------------------------------------------
 
 
@@ -228,6 +240,59 @@ def test_apply_fill_buy_przekraczajacy_gotówkę(env):
     )
     with pytest.raises(LedgerError):
         svc.apply_fill(fill.id)
+
+
+def test_apply_fill_nieistniejacy_fill(env):
+    svc = env["svc"]
+    from gpwbot.config import PortfolioDef
+
+    svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    with pytest.raises(LedgerError):
+        svc.apply_fill(999_999)
+
+
+def test_apply_fill_nieznana_strona_zlecenia(env):
+    """Nieznany ciąg order.side → LedgerError (nie surowy ValueError)."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    order = _order(s, pid, inst.id, "HOLD", 10, D("2026-10-15"))
+    fill = _fill(s, order, D("2026-10-15"), Decimal("10.00"), 10, Decimal("3.00"))
+    with pytest.raises(LedgerError):
+        svc.apply_fill(fill.id)
+
+
+def test_sell_w_dniu_niesesyjnym_rzuca_ledger_error(env):
+    """Rozliczenie T+2 wymaga daty sesji; sobota 17.10 → LedgerError."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    buy_order = _order(s, pid, inst.id, "BUY", 100, D("2026-10-14"))
+    buy_fill = _fill(
+        s,
+        buy_order,
+        D("2026-10-14"),
+        Decimal("10.00"),
+        100,
+        calc_commission(Decimal("1000"), env["cfg"].costs),
+    )
+    svc.apply_fill(buy_fill.id)
+
+    sell_order = _order(s, pid, inst.id, "SELL", 100, D("2026-10-17"))
+    sell_fill = _fill(
+        s,
+        sell_order,
+        D("2026-10-17"),
+        Decimal("14.00"),
+        100,
+        calc_commission(Decimal("1400"), env["cfg"].costs),
+    )
+    with pytest.raises(LedgerError):
+        svc.apply_fill(sell_fill.id)
 
 
 # --- rozliczenie T+2 -----------------------------------------------------------------
@@ -357,7 +422,7 @@ def test_rozliczenie_przesuwa_sie_o_wakacje(tmp_db):
 
 
 def test_dywidenda_netto_i_pay_date(env):
-    """Netto = brutto × (1 − 19%); wpływ od pay_date; pomija pozycje kupione w dniu ex."""
+    """Netto = brutto × (1 − 19%) na sumie; wpływ od pay_date; pomija pozycje kupione w dniu ex."""
     svc, s, cfg = env["svc"], env["s"], env["cfg"]
     from gpwbot.config import PortfolioDef
 
@@ -384,13 +449,22 @@ def test_dywidenda_netto_i_pay_date(env):
             value=Decimal("2.00"),
         )
     )
+    s.add(
+        CorporateAction(
+            instrument_id=inst_bbb.id,
+            type="DIVIDEND",
+            ex_date=D("2026-10-15"),
+            pay_date=D("2026-11-09"),
+            value=Decimal("3.00"),
+        )
+    )
     s.flush()
 
     applied = svc.apply_corporate_actions(pid, D("2026-11-03"))
-    assert applied == 1
+    assert applied == 1  # tylko AAA; BBB kupiona w dniu ex_date → pominięta (brak ref)
     divs = [e for e in _entries(s, pid) if e.type == "DIVIDEND"]
     assert len(divs) == 1
-    # netto na akcję = 2.00 × (1 − 0.19) = 1.62; × 100 akcji
+    # netto na sumie = 2.00 × 100 akcji × (1 − 0.19) = 162.00 (D-039); BBB nic nie dostaje
     assert divs[0].amount == Decimal("162.00")
     assert divs[0].available_from == D("2026-11-02")
 
@@ -431,6 +505,40 @@ def test_dywidenda_brak_podwojonego_księgowania(env):
     assert svc.apply_corporate_actions(pid, D("2026-11-04")) == 0
     divs = [e for e in _entries(s, pid) if e.type == "DIVIDEND"]
     assert len(divs) == 1
+
+
+def test_dywidenda_pay_date_null_fallback_ex_date(env):
+    """Brak pay_date → wpływ od ex_date (D-037)."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    order = _order(s, pid, inst.id, "BUY", 100, D("2026-10-14"))
+    fill = _fill(
+        s,
+        order,
+        D("2026-10-14"),
+        Decimal("10.00"),
+        100,
+        calc_commission(Decimal("1000"), env["cfg"].costs),
+    )
+    svc.apply_fill(fill.id)
+
+    s.add(
+        CorporateAction(
+            instrument_id=inst.id,
+            type="DIVIDEND",
+            ex_date=D("2026-10-15"),
+            pay_date=None,
+            value=Decimal("2.00"),
+        )
+    )
+    s.flush()
+
+    svc.apply_corporate_actions(pid, D("2026-11-03"))
+    divs = [e for e in _entries(s, pid) if e.type == "DIVIDEND"]
+    assert len(divs) == 1 and divs[0].available_from == D("2026-10-15")
 
 
 # --- splity ------------------------------------------------------------------------------
@@ -491,16 +599,11 @@ def test_split_ulamkowe_akcje_rzuca_ledger_error(env):
 
     pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
     inst = _instrument(s, "AAA")
-    order = _order(s, pid, inst.id, "BUY", 100, D("2026-10-14"))
-    fill = _fill(s, order, D("2026-10-14"), Decimal("10.00"), 100, Decimal("5.00"))
+    order = _order(s, pid, inst.id, "BUY", 101, D("2026-10-14"))
+    fill = _fill(s, order, D("2026-10-14"), Decimal("10.00"), 101, Decimal("5.00"))
     svc.apply_fill(fill.id)
 
-    # Split 1.5:1 dla 100 akcji = 150 (OK), ale dla 101 akcji = 151.5 (Błąd)
-    # Zmienimy ilość w partii bezpośrednio, by wymusić błąd
-    lot = s.query(TaxLot).one()
-    lot.qty_remaining = 101
-    s.flush()
-
+    # Nieparzysta ilość × współczynnik 1.5 → ułamkowa liczba akcji (101 × 1.5 = 151.5).
     s.add(
         CorporateAction(
             instrument_id=inst.id,
@@ -514,6 +617,11 @@ def test_split_ulamkowe_akcje_rzuca_ledger_error(env):
 
     with pytest.raises(LedgerError, match="dałaby ułamkową liczbę akcji"):
         svc.apply_corporate_actions(pid, D("2026-10-16"))
+
+    # Stan bez zmian: partia nietknięta i brak wpisu ADJUSTMENT.
+    lot = s.query(TaxLot).filter_by(portfolio_id=pid).one()
+    assert lot.qty_remaining == 101
+    assert [e for e in _entries(s, pid) if e.type == "ADJUSTMENT"] == []
 
 
 # --- pozycje, equity, snapshoty -------------------------------------------------------------
@@ -536,8 +644,7 @@ def test_positions_pola_i_held_sessions(env):
     )
     svc.apply_fill(fill.id)
 
-    # zegar: środa 2026-10-14 (Warszawa) → jedna sesja od otwarcia pozycji (czw 14.10? nie —
-    # kupno 14.10, dziś 14.10 → 0; przesuwamy zegar na piątek 15.10 → 1 sesja)
+    # Kupno w środę 14.10; zegar na czwartek 15.10 (Warszawa) → jedna sesja od otwarcia pozycji.
     env["clock"].set(dt.datetime(2026, 10, 15, 9, 0, tzinfo=dt.UTC))
     pos = svc.positions(pid, {"AAA": Decimal("12.00")})[0]
     assert pos.ticker == "AAA" and pos.qty == 100
@@ -580,6 +687,35 @@ def test_equity_snapshot_peak(env):
 
     svc.snapshot(pid, D("2026-10-16"), prices_high)
     assert svc.peak_equity(pid) == svc.equity(pid, prices_high)
+
+
+def test_snapshot_nadpisuje_po_dacie(env):
+    """Drugi snapshot dla tej samej daty nadpisuje pierwszy (upsert po dacie)."""
+    svc, s = env["svc"], env["s"]
+    from gpwbot.config import PortfolioDef
+
+    pid = svc.create_portfolio(PortfolioDef(id="p1", strategy="baseline"))
+    inst = _instrument(s, "AAA")
+    order = _order(s, pid, inst.id, "BUY", 100, D("2026-10-14"))
+    fill = _fill(
+        s,
+        order,
+        D("2026-10-14"),
+        Decimal("10.00"),
+        100,
+        calc_commission(Decimal("1000"), env["cfg"].costs),
+    )
+    svc.apply_fill(fill.id)
+
+    date = D("2026-10-15")
+    svc.snapshot(pid, date, {"AAA": Decimal("9.00")})
+    svc.snapshot(pid, date, {"AAA": Decimal("15.00")})
+
+    rows = s.query(PortfolioSnapshot).filter_by(portfolio_id=pid).all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.equity == svc.cash_total(pid) + Decimal("1500")
+    assert row.positions_json["AAA"]["last_price"] == "15.00"
 
 
 def test_izolacja_portfeli(env):
