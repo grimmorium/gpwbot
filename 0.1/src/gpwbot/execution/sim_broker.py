@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from gpwbot.calendar import GpwCalendar
@@ -38,6 +38,26 @@ class SessionExecutionReport:
     session_date: dt.date
     filled_order_ids: tuple[int, ...] = ()
     expired_orders: tuple[tuple[int, str], ...] = ()  # (order_id, kod powodu)
+
+
+def _precheck_reason(order: Order, bar: PriceBar | None) -> str | None:
+    """Powód wygaśnięcia przed symulacją filla albo `None`, gdy można symulować.
+
+    Brak świecy → NO_BAR; wiersz niezgodny z LIMIT_AT_OPEN (strona/typ/limit), świeca z flagą
+    jakości, cena otwarcia ≤ 0 lub ujemny wolumen → BAD_DATA — filla nie da się policzyć, a
+    wygaszenie jest bezpieczniejsze niż przerwanie sesji w połowie pętli (D-049).
+    """
+    if bar is None:
+        return OrderReason.NO_BAR.value
+    malformed = order.side not in (Side.BUY.name, Side.SELL.name) or (
+        order.order_type != OrderType.LIMIT_AT_OPEN.value or order.limit_price is None
+    )
+    bad_bar = (
+        bar.quality_flag is not None or bar.open <= 0 or (bar.volume is not None and bar.volume < 0)
+    )
+    if malformed or bad_bar:
+        return OrderReason.BAD_DATA.value
+    return None
 
 
 class SimBroker:
@@ -184,7 +204,9 @@ class SimBroker:
 
         Zbiór: `valid_from_session ≤ session_date` i `processed_session IS NULL`; kolejność:
         najpierw SELL, potem BUY, w obrębie typu rosnąco po `id`. Brak świecy → EXPIRED/
-        `NO_BAR`; niespełniony limit lub limit wolumenu → EXPIRED z odpowiednim kodem.
+        `NO_BAR`; nieprawidłowe dane (flaga jakości, open ≤ 0, ujemny wolumen) lub wiersz
+        niezgodny z LIMIT_AT_OPEN → EXPIRED/`BAD_DATA` (D-049); niespełniony limit lub limit
+        wolumenu → EXPIRED z odpowiednim kodem.
         Po każdym zleceniu: `processed_session = session_date` i zwolnienie rezerwacji;
         dla filli dodatkowo `apply_fill`. Ponowne wywołanie dla tej samej sesji nic nie
         zmienia (wszystkie wiersze mają już `processed_session`). Flush bez commitu.
@@ -198,7 +220,8 @@ class SimBroker:
                     Order.valid_from_session <= session_date,
                     Order.processed_session.is_(None),
                 )
-                .order_by(Order.side.desc(), Order.id.asc())
+                # SELL przed BUY jawnie (nie przez porównanie stringów; przegląd C3)
+                .order_by(case((Order.side == Side.SELL.name, 0), else_=1), Order.id.asc())
             ).scalars()
         )
         if not orders:
@@ -239,11 +262,9 @@ class SimBroker:
                 msg = f"zlecenie {order.id}: instrument bez wiersza w `instruments`"
                 raise ValueError(msg)
             bar = bars.get(order.instrument_id)
-            reason_code: str | None = None
+            reason_code: str | None = _precheck_reason(order, bar)
             fill_row: Fill | None = None
-            if bar is None:
-                reason_code = OrderReason.NO_BAR.value
-            else:
+            if reason_code is None and bar is not None:
                 intent = OrderIntent(
                     ticker=ticker,
                     side=Side(order.side),
@@ -251,22 +272,29 @@ class SimBroker:
                     limit_price=order.limit_price,
                     reason=order.reason or "",
                 )
-                result = simulate_fill(intent, bar, self._cfg.costs, self._ticks)
-                if result is None:
-                    reason_code = rejection_reason(intent, bar, self._cfg.costs)
-                    assert reason_code is not None  # simulate_fill=None ⇒ powód istnieje
+                try:
+                    result = simulate_fill(intent, bar, self._cfg.costs, self._ticks)
+                except ValueError as exc:
+                    # Resztkowe nieprawidłowe ceny (np. SELL z open poniżej ticka po poślizgu):
+                    # wygaszenie zamiast przerwania sesji w połowie pętli (D-049).
+                    reason_code = OrderReason.BAD_DATA.value
+                    log.warning("order_bad_data", ticker=ticker, order_id=order.id, detail=str(exc))
                 else:
-                    fill_row = Fill(
-                        order_id=order.id,
-                        session_date=session_date,
-                        price=result.price,
-                        qty=result.qty,
-                        commission=result.commission,
-                        slippage_cost=result.slippage_cost,
-                    )
-                    self._s.add(fill_row)
-                    self._s.flush()
-                    self._svc.apply_fill(fill_row.id)  # księguje i zwalnia rezerwację
+                    if result is None:
+                        reason_code = rejection_reason(intent, bar, self._cfg.costs)
+                        assert reason_code is not None  # simulate_fill=None ⇒ powód istnieje
+                    else:
+                        fill_row = Fill(
+                            order_id=order.id,
+                            session_date=session_date,
+                            price=result.price,
+                            qty=result.qty,
+                            commission=result.commission,
+                            slippage_cost=result.slippage_cost,
+                        )
+                        self._s.add(fill_row)
+                        self._s.flush()
+                        self._svc.apply_fill(fill_row.id)  # księguje i zwalnia rezerwację
 
             if fill_row is not None:
                 order.status = OrderStatus.FILLED.value

@@ -135,6 +135,8 @@ CASES = [
     ("volume_boundary_ok", "BUY", "10.00", None, 1000, 20_000, 0, ("10.00", "30.00", "0"), None),
     # przekroczenie limitu wolumenu → brak realizacji (bez częściowych)
     ("volume_exceeded", "BUY", "10.00", None, 1001, 20_000, 0, None, "volume_limit"),
+    # ujemny wolumen = dane niespójne: max_qty < 0, każda qty przekracza limit (D-049)
+    ("volume_negative_rejected", "BUY", "10.00", None, 100, -5, 0, None, "volume_limit"),
     # volume=None: udziału nie da się policzyć → kontrola pominięta
     (
         "volume_none_no_check",

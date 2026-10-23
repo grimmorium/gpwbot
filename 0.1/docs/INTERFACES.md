@@ -446,7 +446,7 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   wzorzec D-031).
 - `OrderStatus` — StrEnum: `PENDING`, `FILLED`, `EXPIRED`, `REJECTED`, `CANCELLED`.
 - `OrderReason` — StrEnum (kody do `orders.reason`): `NO_CASH`, `NO_POSITION`, `LIMIT_NOT_MET`,
-  `VOLUME_LIMIT`, `NO_BAR`.
+  `VOLUME_LIMIT`, `NO_BAR`, `BAD_DATA` (nieprawidłowe dane świecy/wiersza zlecenia; D-049).
 
 ### `gpwbot.execution.fill_model` (czysta logika)
 
@@ -454,7 +454,8 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
   ilość (bez częściowych realizacji).
 - `simulate_fill(order: OrderIntent, bar: PriceBar, costs_cfg: CostsCfg, tick_table: TickTable,
   group="default") -> FillResult | None` — kolejność reguł: limit otwarcia (`LIMIT_NOT_MET`) →
-  udział w wolumenie sesji (`VOLUME_LIMIT`; granica dozwolona, `volume=None` nie blokuje; D-043) →
+  udział w wolumenie sesji (`VOLUME_LIMIT`; granica dozwolona, `volume=None` nie blokuje, ujemny
+  wolumen przekracza limit; D-043/D-049) →
   cena = `apply_slippage(open, side, bps)` zaokrąglone do ticka (BUY UP / SELL DOWN), przycięte do
   limitu bez ponownego zaokrąglenia (D-044) → `commission` z `costs.commission`,
   `slippage_cost = abs(cena − open) × qty`. `qty ≤ 0` → `ValueError`.
@@ -475,12 +476,14 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
     zostają w bazie dla audytu; nieznany ticker, `limit_price ≤ 0/None`, `qty ≤ 0` → `ValueError`
     (D-045). Zwraca id wszystkich utworzonych wierszy w kolejności wejścia.
   - `process_session(portfolio_id, session_date) -> SessionExecutionReport` — PENDING z
-    `valid_from ≤ session_date` i `processed_session IS NULL`; najpierw SELL, potem BUY, w obrębie
-    typu rosnąco po `id`; świeca = pierwszy wiersz `prices_daily` per instrument (rosnąco po
-    `source`; D-048); brak świecy → EXPIRED/`NO_BAR`, inaczej `simulate_fill` (grupa ticków
-    `"default"`); fill → wiersz `fills` + `apply_fill` (księguje i zwalnia rezerwację), wygaśnięcie
-    → `release`; po każdym: `processed_session = session_date` — ponowne wywołanie no-op
-    (D-047).
+    `valid_from ≤ session_date` i `processed_session IS NULL`; najpierw SELL, potem BUY (jawny
+    CASE, nie porównanie stringów), w obrębie typu rosnąco po `id`; świeca = pierwszy wiersz
+    `prices_daily` per instrument (rosnąco po `source`; D-048); brak świecy → EXPIRED/`NO_BAR`,
+    flaga jakości / open ≤ 0 / ujemny wolumen / wiersz niezgodny z LIMIT_AT_OPEN → EXPIRED/
+    `BAD_DATA` (D-049), inaczej `simulate_fill` (grupa ticków `"default"`; resztkowe ValueError
+    też → BAD_DATA); fill → wiersz `fills` + `apply_fill` (księguje i zwalnia rezerwację),
+    wygaśnięcie → `release`; po każdym: `processed_session = session_date` — ponowne wywołanie
+    no-op (D-047). Finansowanie kupna sprzedażą z tej samej sesji niemożliwe przy submit (D-050).
 
 ### Konfiguracja (rozszerzenie S02)
 
@@ -497,9 +500,11 @@ Późniejsze sesje opierają się na tym pliku zamiast czytać źródła (A2). F
 ### Testy / fixture
 
 - `tests/execution/`: `test_fill_model.py` (tabela ≥ 12 przypadków czystej logiki + spójność
-  `rejection_reason`), `test_sim_broker.py` (submit: rezerwacja, NO_CASH, SELL ponad stan,
+  `rejection_reason`, w tym ujemny wolumen → VOLUME_LIMIT), `test_sim_broker.py` (submit:
+  rezerwacja, NO_CASH, SELL ponad stan, pusta lista, limit None/0/ujemny,
   `valid_from_session` przed otwarciem/w trakcie/piątek wieczorem; process_session: kolejność
-  SELL→BUY, `settle_instantly` finansuje zakup vs T+2, NO_BAR, wygasanie z kodami, zwolnienie
-  rezerwacji, idempotencja, czekanie na sesję; scenariusz demonstracyjny kupno/wygaśnięcie/
-  sprzedaż), `test_sim_broker_properties.py` (`hypothesis`: losowe zlecenia i ceny —
-  `check_invariants` po każdym kroku).
+  SELL→BUY, `settle_instantly` finansuje zakup vs T+2, przypięcie D-050 (finansowanie w sesji
+  niemożliwe), NO_BAR, BAD_DATA (flaga jakości/open ≤ 0/ujemny wolumen/SELL poniżej ticka/wiersz
+  niezgodny z LIMIT_AT_OPEN), wygasanie z kodami, zwolnienie rezerwacji, idempotencja, czekanie na
+  sesję; scenariusz demonstracyjny kupno/wygaśnięcie/sprzedaż), `test_sim_broker_properties.py`
+  (`hypothesis`: losowe zlecenia i ceny — `check_invariants` po każdym kroku).

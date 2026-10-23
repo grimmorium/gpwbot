@@ -43,9 +43,11 @@ def _volume_ok(qty: int, volume: int | None, pct: Decimal) -> bool:
     """Czy ilość mieści się w limicie udziału w wolumenie sesji (`pct` %).
 
     `volume is None` (brak danych o obrotach) nie blokuje — udziału nie da się policzyć.
-    Granica jest dozwolona: fill tylko gdy `qty ≤ volume × pct / 100`.
+    Granica jest dozwolona: fill tylko gdy `qty ≤ volume × pct / 100`. Ujemny wolumen to dane
+    niespójne z definicją limitu (maksymalna ilość ujemna) — każda dodatnia `qty` go przekracza,
+    więc realizacja jest odrzucana (`VOLUME_LIMIT`; D-049).
     """
-    if volume is None or volume < 0:
+    if volume is None:
         return True
     max_qty = Decimal(volume) * pct / Decimal(100)
     return Decimal(qty) <= max_qty

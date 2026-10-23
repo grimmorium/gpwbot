@@ -73,7 +73,12 @@ def _inst(s: Session, ticker: str) -> Instrument:
 
 
 def _bar_row(
-    s: Session, inst_id: int, date: dt.date, open_: Decimal, volume: int | None = None
+    s: Session,
+    inst_id: int,
+    date: dt.date,
+    open_: Decimal,
+    volume: int | None = None,
+    quality_flag: str | None = None,
 ) -> None:
     row = PricesDaily(
         instrument_id=inst_id,
@@ -84,10 +89,37 @@ def _bar_row(
         low=open_,
         close=open_,
         volume=volume,
+        quality_flag=quality_flag,
         ingested_at=dt.datetime(2026, 10, 15, tzinfo=dt.UTC),
     )
     s.add(row)
     s.flush()
+
+
+def _pending_order(
+    env: dict[str, object],
+    inst_id: int,
+    side: str,
+    qty: int,
+    limit: Decimal | None,
+    order_type: str = "limit_at_open",
+) -> int:
+    """Wiersz PENDING tworzony bezpośrednio w bazie (anomalia poza `submit`; przegląd C2)."""
+    s, pid = env["s"], env["pid"]  # type: ignore[assignment]
+    order = Order(
+        portfolio_id=pid,
+        instrument_id=inst_id,
+        side=side,
+        qty=qty,
+        order_type=order_type,
+        limit_price=limit,
+        status="pending",
+        created_at=env["clock"].now(),  # type: ignore[union-attr]
+        valid_from_session=DATE("2026-10-16"),
+    )
+    s.add(order)
+    s.flush()
+    return order.id
 
 
 def _direct_buy(
@@ -218,15 +250,22 @@ def test_submit_nieznany_ticker_rzuca_value_error(env):
     [
         OrderIntent("AAA", Side.BUY, 10, limit_price=None),
         OrderIntent("AAA", Side.SELL, 10, limit_price=D("0")),
+        OrderIntent("AAA", Side.BUY, 10, D("-5.00")),
         OrderIntent("AAA", Side.BUY, 0, D("5.00")),
     ],
-    ids=["brak_limitu", "limit_zero", "qty_zero"],
+    ids=["brak_limitu", "limit_zero", "limit_ujemny", "qty_zero"],
 )
 def test_submit_nieważne_zlecenie_rzuca_value_error(env, intent: OrderIntent):
     broker, s, pid = env["broker"], env["s"], env["pid"]  # type: ignore[assignment]
     _inst(s, "AAA")
     with pytest.raises(ValueError):
         broker.submit(pid, None, [intent])
+
+
+def test_submit_pusta_lista_zwraca_pusto(env):
+    broker, pid = env["broker"], env["pid"]  # type: ignore[assignment]
+
+    assert broker.submit(pid, None, []) == []
 
 
 # --- process_session --------------------------------------------------------------
@@ -329,6 +368,45 @@ def test_process_t_plus_2_sprzedaz_jeszcze_nie_finansuje(tmp_db):
     assert order.reason == OrderReason.NO_CASH.value
 
 
+def test_submit_finansowanie_w_sesji_nieosiagalne(tmp_db):
+    """Przypina D-050: BUY wymagający wpływów z SELL tej samej sesji jest odrzucony NO_CASH przy
+    submit — walidacja gotówki nie zna jeszcze przyszłych filli (nawet przy `settle_instantly`)."""
+    env = _make_env(tmp_db, settle_instantly=True)
+    broker, s, pid, clock = (  # type: ignore[assignment]
+        env["broker"],
+        env["s"],
+        env["pid"],
+        env["clock"],
+    )
+    inst_aaa = _inst(s, "AAA")
+    _inst(s, "BBB")  # wiersz instrumentu potrzebny do submit po tickerze
+    _direct_buy(env, inst_aaa.id, DATE("2026-10-14"), D("9.80"), 9_500)
+
+    clock.set(dt.datetime(2026, 10, 16, 15, 30, tzinfo=dt.UTC))  # piątek wieczorem → poniedziałek
+    ids = broker.submit(
+        pid,
+        None,
+        [
+            OrderIntent("AAA", Side.SELL, 9_500, D("9.90")),
+            OrderIntent("BBB", Side.BUY, 9_800, D("10.20")),
+        ],
+    )
+    sell_order = s.get(Order, ids[0])
+    buy_order = s.get(Order, ids[1])
+    assert sell_order is not None and sell_order.status == OrderStatus.PENDING.value
+    # rezerwacja 100 259.88 > gotówka 6 620.70 (wpływy ze sprzedaży dopiero po fillu) → NO_CASH
+    assert buy_order is not None and buy_order.status == OrderStatus.REJECTED.value
+    assert buy_order.reason == OrderReason.NO_CASH.value
+
+    _bar_row(s, inst_aaa.id, DATE("2026-10-19"), D("10.00"))
+    report = broker.process_session(pid, DATE("2026-10-19"))
+
+    assert report.filled_order_ids == (ids[0],)  # sprzedaż się realizuje...
+    buy_after = s.get(Order, ids[1])
+    # ...ale odrzucone przy submit kupno nie czeka na wpływy (D-050)
+    assert buy_after is not None and buy_after.status == OrderStatus.REJECTED.value
+
+
 def test_process_no_bar(env):
     broker, svc, s, pid = env["broker"], env["svc"], env["s"], env["pid"]  # type: ignore[assignment]
     _inst(s, "AAA")
@@ -362,6 +440,84 @@ def test_process_wygasanie_limit_wolumenu(env):
     order = s.get(Order, ids[0])
     assert order is not None and order.status == OrderStatus.EXPIRED.value
     assert order.reserved_amount is None
+
+
+def test_process_bad_data_flaga_jakosci(env):
+    """Świeca z flagą jakości (S03) nie może finansować filla — EXPIRED/BAD_DATA (D-049)."""
+    broker, svc, s, pid = env["broker"], env["svc"], env["s"], env["pid"]  # type: ignore[assignment]
+    inst = _inst(s, "AAA")
+
+    ids = broker.submit(pid, None, [OrderIntent("AAA", Side.BUY, 10, D("5.00"))])
+    _bar_row(s, inst.id, DATE("2026-10-16"), D("4.90"), quality_flag="needs_review")
+
+    report = broker.process_session(pid, DATE("2026-10-16"))
+
+    assert report.expired_orders == ((ids[0], OrderReason.BAD_DATA.value),)
+    order = s.get(Order, ids[0])
+    assert order is not None and order.status == OrderStatus.EXPIRED.value
+    assert order.reserved_amount is None  # rezerwacja zwolniona mimo braku filla
+    assert svc.cash_available(pid, DATE("2026-10-19")) == D("100000")
+
+
+def test_process_bad_data_open_nie_dodatni(env):
+    """open ≤ 0: wygaszenie BAD_DATA zamiast ValueError z `apply_slippage` (D-049)."""
+    broker, s, pid = env["broker"], env["s"], env["pid"]  # type: ignore[assignment]
+    inst = _inst(s, "AAA")
+
+    ids = broker.submit(pid, None, [OrderIntent("AAA", Side.BUY, 10, D("5.00"))])
+    _bar_row(s, inst.id, DATE("2026-10-16"), D("0"))
+
+    report = broker.process_session(pid, DATE("2026-10-16"))
+
+    assert report.expired_orders == ((ids[0], OrderReason.BAD_DATA.value),)
+
+
+def test_process_bad_data_ujemny_wolumen(env):
+    """Ujemny wolumen świecy: wygaszenie BAD_DATA (D-049)."""
+    broker, s, pid = env["broker"], env["s"], env["pid"]  # type: ignore[assignment]
+    inst = _inst(s, "AAA")
+
+    ids = broker.submit(pid, None, [OrderIntent("AAA", Side.BUY, 10, D("5.00"))])
+    _bar_row(s, inst.id, DATE("2026-10-16"), D("4.90"), volume=-1)
+
+    report = broker.process_session(pid, DATE("2026-10-16"))
+
+    assert report.expired_orders == ((ids[0], OrderReason.BAD_DATA.value),)
+
+
+def test_process_bad_data_sell_ponizej_ticka(env):
+    """SELL z open równym tickowi i bps>0: poślizg daje cenę < tick.
+
+    Wygaszenie BAD_DATA zamiast ValueError z `round_price` (D-049).
+    """
+    broker, s, pid = env["broker"], env["s"], env["pid"]  # type: ignore[assignment]
+    inst = _inst(s, "AAA")
+
+    order_id = _pending_order(env, inst.id, "SELL", 1, D("0.10"))
+    _bar_row(s, inst.id, DATE("2026-10-16"), D("0.10"))
+
+    report = broker.process_session(pid, DATE("2026-10-16"))
+
+    assert report.expired_orders == ((order_id, OrderReason.BAD_DATA.value),)
+
+
+def test_process_wiersz_niezgodny_z_limit_at_open(env):
+    """Wiersz PENDING bez limitu / z obcym typem nie wypełni się jak market — BAD_DATA (D-049)."""
+    broker, s, pid = env["broker"], env["s"], env["pid"]  # type: ignore[assignment]
+    inst_aaa = _inst(s, "AAA")
+    inst_bbb = _inst(s, "BBB")
+
+    no_limit_id = _pending_order(env, inst_aaa.id, "BUY", 10, None)
+    legacy_type_id = _pending_order(env, inst_bbb.id, "SELL", 10, D("5.00"), order_type="limit")
+    _bar_row(s, inst_aaa.id, DATE("2026-10-16"), D("4.90"))
+    _bar_row(s, inst_bbb.id, DATE("2026-10-16"), D("5.00"))
+
+    report = broker.process_session(pid, DATE("2026-10-16"))
+
+    assert sorted(report.expired_orders) == [
+        (no_limit_id, OrderReason.BAD_DATA.value),
+        (legacy_type_id, OrderReason.BAD_DATA.value),
+    ]
 
 
 def test_process_idempotentne(env):

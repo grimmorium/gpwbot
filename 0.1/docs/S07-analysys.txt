@@ -1,0 +1,180 @@
+================================================================================
+PRZEGLĄD KODU SESJI S07 — symulator wykonania (commit 5f7b691)
+Data przeglądu: 2026-10-23
+Zakres: docs/sessions/S07.md, src/gpwbot/execution/{orders,fill_model,sim_broker}.py,
+         migracja 9b4d6e1c5a83, tests/execution/*, oraz moduły współdzielone
+         (costs.py, ticks.py, domain.py, portfolio/service.py, calendar.py, db/models.py),
+         decisions.md D-041..D-048, INTERFACES.md (sekcja S07).
+Kod NIE był modyfikowany — tylko analiza.
+================================================================================
+
+I. ZGODNOŚĆ ZE SPECYFIKACJĄ (punkt po punkcie)
+--------------------------------------------------------------------------------
+[OK] orders.py: OrderType.LIMIT_AT_OPEN; OrderStatus PENDING/FILLED/EXPIRED/REJECTED/CANCELLED;
+     dodatkowo OrderReason z kodami NO_CASH, NO_POSITION, LIMIT_NOT_MET, VOLUME_LIMIT, NO_BAR.
+[OK] simulate_fill(order, bar, costs_cfg, tick_table, group) -> FillResult | None:
+     sygnatura zgodna; kolejność reguł 1→4 zgodna ze specyfikacją (limit → wolumen → cena);
+     slippage BUY w górę / SELL w dół; zaokrąglenie do ticka UP/DOWN; przycięcie do limitu;
+     commission z costs.commission; slippage_cost = abs(cena − open) × qty; bez częściowych.
+[OK] SimBroker.submit: valid_from_session = calendar.next_session_after(clock.now()) wspólne
+     dla partii; BUY rezerwuje qty×limit + prowizja, brak środków → REJECTED/NO_CASH (wiersz w bazie);
+     SELL ≤ posiadane − już zlecone do sprzedaży, inaczej REJECTED/NO_POSITION.
+[OK] SimBroker.process_session: zbiór PENDING z valid_from ≤ session_date i processed IS NULL;
+     kolejność najpierw SELL potem BUY (side.desc() — "SELL" > "BUY"), w obrębie typu rosnąco po id;
+     brak świecy → EXPIRED/NO_BAR; po każdym: processed_session = session_date, zwolnienie rezerwacji,
+     apply_fill dla filli; ponowne wywołanie no-op (idempotencja).
+[OK] "Zlecenia ważne jeden dzień" — D-047 dokumentuje semantykę "co najwyżej jedna ocena";
+     zgodne z klauzulą specyfikacji `valid_from_session ≤ session_date`.
+[OK] Migracja Alembic 9b4d6e1c5a83: kolumny orders.processed_session (Date, NULL) i
+     orders.reason (Text, NULL); downgrade je usuwa.
+
+Testy z sekcji "Testy" specyfikacji:
+[OK] Tabela simulate_fill: 14 przypadków (wymagane min. 12), pokrycie wszystkich wymienionych
+     elementów: limit spełniony/niespełniony, open == limit (BUY i SELL, przycięcie), poślizg
+     niekorzystny BUY/SELL, tick UP/DOWN/punkt stały (bps=0), przycięcie do limitu, prowizja
+     minimalna i procentowa, granica wolumenu dozwolona + przekroczenie + volume=None.
+[OK] submit: rezerwacja gotówki (1005.00 = 100×10.00 + min. prowizja), NO_CASH, SELL ponad stan
+     (w tym granica 100−70 i odrzucenie 31), valid_from przed otwarciem / w trakcie sesji /
+     piątek wieczorem (parametryzacja zegara).
+[OK] process_session: kolejność SELL→BUY mimo id BUY < id SELL, kontrast T+2 vs settle_instantly,
+     NO_BAR, wygasanie z kodami (VOLUME_LIMIT, LIMIT_NOT_MET), zwolnienie rezerwacji,
+     idempotencja, czekanie na przyszłą sesję.
+[OK] Integracja z ledgerem: test własnościowy (hypothesis) — check_invariants po każdym kroku;
+     scenariusz demonstracyjny kupno/wygaśnięcie/sprzedaż + końcowe check_invariants.
+
+Akceptacja:
+[OK] Pokrycie fill_model = 100% (wymagane ≥90%). Pomiar: `coverage run -m pytest
+     tests/execution/test_fill_model.py` + raport (pytest-cov z podmodułem nie działa na tej
+     maszynie — patrz C5).
+[OK] Scenariusz demonstracyjny w teście integracyjnym (test_scenariusz_demonstracyjny_kupno_wygasniecie_sprzedaz);
+     wszystkie kwoty w testach przeliczone ręcznie i zgodne.
+
+II. ZNALEZIONE PROBLEMY
+--------------------------------------------------------------------------------
+Priorytety: KRYTYCZNY / WAŻNY / DROBNE. Brak problemów krytycznych.
+
+[B1] WAŻNY — scenariusz specyfikacji "settle_instantly: sprzedaż finansuje zakup" jest
+     nieosiągalny w jednej sesji; testy pokrywają tylko połówki osobno.
+     Pliki/linie: docs/sessions/S07.md (sekcja Testy), src/gpwbot/execution/sim_broker.py:137,
+                  tests/execution/test_sim_broker.py (test_process_sell_przed_buy,
+                  test_process_settle_instantly_sprzedaz_finansuje_zakup).
+     Opis: Jeśli SELL i BUY są jednocześnie PENDING na tę samą sesję, a kupno wymaga wpływów
+     z tej sprzedaży, to przy submit `cash_available(portfolio_id, valid_from)` (lin. 137) nie
+     zawiera jeszcze przyszłych wpływów — wpis ledgera powstaje dopiero w process_session
+     (_apply_sell). Taki BUY zawsze dostanie REJECTED/NO_CASH, nawet gdyby SELL zrealizował się
+     wcześniej w tej samej sesji (kolejność SELL→BUY nie pomaga, bo walidacja jest przy submit).
+     Testy pokrywają: kolejność SELL→BUY (T+2) i finansowanie — ale to drugie dopiero po
+     osobnym submit WIECZOREM po zrealizowaniu sprzedaży. Połączonego scenariusza nie da się
+     nawet skonstruować, więc specyfikacja opisuje zachowanie niemożliwe do spełnienia.
+     Propozycja: (a) udokumentować konsekwencję w decisions.md (nowy wpis D-0xx: "finansowanie
+     kupna sprzedażą z tej samej sesji jest niemożliwe — walidacja przy submit jest konserwatywna"),
+     oraz (b) dodać test przypinający obecne zachowanie (BUY odrzucony NO_CASH mimo że po fillu
+     SELL w tej samej sesji środki by wystarczyły). Alternatywa, jeśli finansowanie w jednej
+     sesji jest wymagane: submit uwzględniałby oczekujące SELL z settle_instantly przy liczeniu
+     dostępnej gotówki dla BUY o tym samym valid_from (wymaga decyzji projektowej).
+
+[B2] WAŻNY — process_session ignoruje quality_flag świecy.
+     Pliki/linie: src/gpwbot/execution/sim_broker.py:~215-235 (wybór świecy per instrument),
+                  por. src/gpwbot/universe.py:229 (screener sprawdza "needs_review").
+     Opis: Świece z flagą jakościową nadaną w S03 (np. "needs_review" — non_positive_price,
+     high_below_low, ohlc_out_of_range) są zapisywane do prices_daily i bezwarunkowo używane
+     do decyzji o fillu. Screener filtruje po needs_review, ale warstwa wykonania nie sprawdza
+     flagi w ogóle — symulator może "zrealnić" zlecenie na świecy z danymi niewiarygodnymi.
+     Specyfikacja S07 jest milcząca → brak decyzji projektowej.
+     Propozycja: jawnie zdecydować i udokumentować (decisions.md): np. świeca z quality_flag != NULL
+     traktowana jak NO_BAR (albo nowy kod powodu, np. BAD_DATA) + test; albo świadomie zaakceptować
+     i odnotować jako dług techniczny przed startem forward testu.
+
+[B3] WAŻNY — nieprawidłowe dane świecy wywołują wyjątek w połowie process_session zamiast
+     wygaszenia zlecenia (stan częściowy sesji).
+     Pliki/linie: src/gpwbot/costs.py:39 (apply_slippage rzuca ValueError dla ceny ≤ 0),
+                  src/gpwbot/ticks.py:154 (round_price DOWN rzuca, gdy cena < tick),
+                  src/gpwbot/execution/fill_model.py:48 (volume < 0 traktowane jak "brak danych"),
+                  src/gpwbot/execution/sim_broker.py (pętla process_session).
+     Opis: (1) bar.open ≤ 0 → apply_slippage rzuca ValueError; (2) SELL z open mniejszym niż tick
+     (np. open=0.05, tick=0.10) → round_price DOWN rzuca ValueError. Wyjątek propaguje się po tym,
+     jak część zleceń w sesji została już przetworzona (statusy zmienione, filli zaksięgowane) —
+     spójność ratuje wyłącznie savepoint/rollback wywołującego; testy używają begin_nested, ale
+     produkcja musi to gwarantować. (3) Powiązane: `_volume_ok` traktuje volume < 0 jak "brak danych"
+     i DOZWALA fill — dosłownie wg specyfikacji (`qty > volume × pct/100`) ujemny wolumen oznaczałby
+     VOLUME_LIMIT; docstring dokumentuje tylko `None`.
+     Propozycja: walidacja świecy PRZED pętlą (open > 0 oraz open ≥ tick dla SELL) → EXPIRED z kodem
+     powodu albo DataQualityError rzucony przed jakąkolwiek modyfikacją; decyzja o semantyce volume < 0
+     (DataQualityError vs odrzucenie VOLUME_LIMIT) + testy brzegowe.
+
+[C1] DROBNE — off-tickowy limit daje po przycięciu cenę filla poza siatką ticków.
+     Pliki/linie: src/gpwbot/execution/fill_model.py (przycięcie do limitu), decisions.md D-044.
+     Opis: Udokumentowane jako dług techniczny; S08 zaokrągla cenę limitu do ticka, więc w normalnym
+     przepływie nie wystąpi. Brak akcji poza śledzeniem długu.
+
+[C2] DROBNE — process_session nie filtruje po order_type i akceptuje zlecenia z limit_price = None.
+     Pliki/linie: src/gpwbot/execution/sim_broker.py:~195-203 (zapytanie), ~246-253 (rekonstrukcja OrderIntent).
+     Opis: Zlecenie PENDING z limit_price=None (np. historyczny typ "limit") zostałoby zrealizowane
+     jak market na otwarciu (open ± slippage) — _limit_ok zwraca True dla None. W v1 nieosiągalne przez
+     SimBroker (submit wymusza limit > 0, D-045), ale tania ochrona defensywna: filtr po
+     OrderType.LIMIT_AT_OPEN.value albo ValueError przy limit_price=None w process_session.
+
+[C3] DROBNE — kolejność SELL→BUY oparta na porównaniu stringów `Order.side.desc()`.
+     Pliki/linie: src/gpwbot/execution/sim_broker.py:201.
+     Opis: Działa, bo "SELL" > "BUY" w ASCII; kruche, gdyby wartości side kiedyś znormalizowano do
+     małych liter (konwencja D-031 to małe litery dla słupków tekstowych). Propozycja: jawny CASE
+     (np. `case((Order.side == "SELL", 0), else_=1)`) albo udokumentowany inwariant w INTERFACES.md.
+
+[C4] DROBNE — brakujące przypadki brzegowe w testach.
+     Pliki/linie: src/gpwbot/execution/sim_broker.py:80 (`if not intents: return []` — nieprzetestowane),
+                  tests/execution/test_sim_broker.py (test_submit_nieważne_zlecenie_rzuca_value_error).
+     Opis: Pusta lista intencji (submit → []) i ujemny limit (testowane są tylko None oraz 0) nie mają
+     testów. Propozycja: dwa małe przypadki parametryzacyjne.
+
+[C5] DROBNE / środowisko — `pytest --cov=<podmoduł>` zawodzi na tej maszynie (nie dotyczy kodu S07).
+     Pliki/linie: scripts/check.ps1:11, scripts/check.sh:14 (używają `--cov=gpwbot` — DZIAŁA).
+     Opis: `.venv\Scripts\python.exe -m pytest ... --cov=gpwbot.execution.fill_model` kończy się
+     ImportError numpy ("cannot load module more than once per process") — artefakt venv opartego na
+     anaconda + pytest-cov z podmodułem jako źródłem. `--cov=gpwbot` (forma używana przez bramkę QC)
+     oraz zwykły pytest działają poprawnie; pokrycie zmierzono przez `coverage run -m pytest ... &&
+     coverage report --include=*fill_model*`. Brak wpływu na scripts/check.sh/ps1.
+
+III. WERYFIKACJE UJEMNE (sprawdzone — brak problemu)
+--------------------------------------------------------------------------------
+[OK] Look-ahead: process_session używa wyłącznie świec z session_date i zleceń z valid_from ≤
+     session_date; submit używa clock.now(). Testy własnościowe dopisują świecę przed otwarciem
+     przetwarzanej sesji (ingested_at < open). Brak użycia danych późniejszych niż as_of.
+[OK] Czas: wszystkie datetime świadome strefy (clock.now() → aware UTC; created_at=now); daty sesji
+     jako dt.date; brak datetime.now() poza SystemClock; next_session_after odrzuca naive ts.
+[OK] Pieniądze: Decimal w całej logice S07 (fill model, rezerwacje, slippage_cost); brak float;
+     Decimal(volume) z inta dokładne; bps jako int → Decimal(bps). Zaokrąglenia: prowizja HALF_UP do 0.01
+     (costs.py), tick przez TickTable (BUY UP / SELL DOWN), kwoty PLN do 2 miejsc.
+[OK] Granice nierówności: open == limit realizuje się (przycięcie, testy BUY i SELL); granica wolumenu
+     qty == volume×pct/100 DOZWOLONA (D-043, test volume_boundary_ok); prowizja monotoniczna względem
+     wartości ⇒ koszt filla BUY ≤ rezerwacja zawsze (cena po przycięciu ≤ limit) — ścieżka ujemnej
+     gotówki przy fillu nie istnieje; apply_fill dodatkowo rzuca LedgerError dla cash_total < 0.
+[OK] Idempotencja: processed_session ustawiane po każdym zleceniu; ponowne wywołanie no-op (test);
+     release() idempotentne; rezerwacja BUY zwalniana przez apply_fill (_release_reservation) lub
+     jawnie przy wygaśnięciu.
+[OK] submit w partii: pending_sell_qty aktualizowane w pętli (wielu SELL tego tickera w jednej partii);
+     rezerwacje wcześniejszych intencji widoczne dla kolejnych (flush przed reserve).
+
+IV. WYNIK
+--------------------------------------------------------------------------------
+Testy: 49 passed (tests/execution), pokrycie fill_model 100%.
+Podsumowanie: brak problemów krytycznych; 3 ważne (B1 luka spec/test + brak decyzji, B2 ignorowana
+flaga jakości, B3 wyjątki na brudnych danych w połowie sesji) i 5 drobnych. Kod jest zgodny z
+specyfikacją S07 tam, gdzie specyfikacja jest jednoznaczna; problemy leżą w przypadkach
+niejednoznacznych (jakość danych, finansowanie w jednej sesji), które wymagają decyzji projektowej
+i wpisów do decisions.md przed startem forward testu.
+
+V. STATUS PO NAPRAWACH (2026-10-23)
+--------------------------------------------------------------------------------
+[B1]  NAPRAWIONE — decyzja D-050 w decisions.md + test przypinający
+      `test_submit_finansowanie_w_sesji_nieosiagalne` (zachowanie konserwatywne; alternatywa
+      kredytowania oczekujących sprzedaży odrzucona — ryzyko "duchowych" wpływów).
+[B2]  NAPRAWIONE — D-049: świeca z quality_flag != NULL → EXPIRED/BAD_DATA w process_session.
+[B3]  NAPRAWIONE — D-049: precheck przed symulacją (open ≤ 0, ujemny wolumen) + łapanie resztkowych
+      ValueError per-zlecenie → BAD_DATA; `_volume_ok` odrzuca ujemny wolumen (VOLUME_LIMIT).
+[C1]  BEZ ZMIAN — już udokumentowane jako dług techniczny (D-044); mitygacja w S08.
+[C2]  NAPRAWIONE — D-049: wiersz PENDING niezgodny z LIMIT_AT_OPEN (strona/typ/limit) → BAD_DATA.
+[C3]  NAPRAWIONE — jawna kolejność SELL→BUY przez `case(...)` zamiast porównania stringów.
+[C4]  NAPRAWIONE — testy: pusta lista intencji, ujemny limit, ujemny wolumen (tabela fill model).
+[C5]  BEZ ZMIAN — artefakt środowiska (venv na anaconda + pytest-cov z podmodułem); bramka QC
+      (`--cov=gpwbot`) działa poprawnie.
+Nowe testy: +8 w tests/execution; decyzje D-049/D-050; INTERFACES.md i PROGRESS.md zaktualizowane.

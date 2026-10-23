@@ -368,6 +368,26 @@ per instrument rosnąco po `source` (deterministycznie, bez dodatkowej konfigura
 to zawsze `"default"`: tabela `instruments` nie przechowuje `tick_group` (`SeedInstrument.tick_group`
 z S04 nie jest persystowany) — obsługa wielu grup wymaga kolumny i migracji (dług techniczny).
 
+### D-049. Walidacja danych świecy i wiersza zlecenia w `process_session` — kod powodu `BAD_DATA`
+Przegląd S07 (B2/B3/C2): świeca z flagą jakości (`quality_flag != NULL`, np. "needs_review" z S03),
+cena otwarcia ≤ 0, ujemny wolumen oraz wiersz PENDING niezgodny z LIMIT_AT_OPEN (obca strona/typ lub
+brak limitu) uniemożliwiają symulację filla — wcześniej `apply_slippage`/`round_price` rzucałyby
+ValueError w połowie pętli (stan częściowy sesji). Teraz: precheck przed symulacją → EXPIRED z nowym
+kodem `OrderReason.BAD_DATA`; resztkowe ValueError z czystego fill model (np. SELL z open poniżej ticka
+po poślizgu) łapane per-zlecenie → również BAD_DATA. W czystej funkcji `_volume_ok` ujemny wolumen
+przekracza limit (max_qty < 0) → `VOLUME_LIMIT` wg dosłownej specyfikacji (poprzednio: traktowany jak
+brak danych).
+
+### D-050. Finansowanie kupna sprzedażą z tej samej sesji jest niemożliwe przy submit
+Przegląd S07 (B1): `submit` waliduje rezerwację BUY wobec `cash_available(valid_from)`, a wpływy ze
+sprzedaży pojawiają się w ledgerze dopiero po fillu (`process_session`). Dlatego BUY, którego koszt
+pokryłyby tylko wpływy z SELL o tym samym `valid_from_session`, jest odrzucony NO_CASH przy submit —
+nawet gdyby `settle_instantly` i kolejność SELL→BUY w sesji pozwalały go rozliczyć. Alternatywa
+(kredytowanie oczekujących sprzedaży) wymagałaby ponownej walidacji gotówki w `process_session`, bo
+sprzedaż może wygasnąć (LIMIT_NOT_MET/NO_BAR/BAD_DATA), a rezerwacja oparta o "duchowe" wpływy dałaby
+LedgerError w połowie sesji. Wybrano zachowanie konserwatywne; przypina test
+`test_submit_finansowanie_w_sesji_nieosiagalne`.
+
 ## Weryfikacje z sekcji 18 Części I (do domknięcia w sesjach)
 
 | # | Kwestia | Odpowiedzialna sesja | Status |

@@ -33,3 +33,6 @@ class OrderReason(StrEnum):
     LIMIT_NOT_MET = "limit_not_met"
     VOLUME_LIMIT = "volume_limit"
     NO_BAR = "no_bar"
+    # S07 (przegląd): świeca z flagą jakości / nieprawidłowe dane OHLC-wolumenu albo
+    # wiersz zlecenia niezgodny z LIMIT_AT_OPEN — fill niemożliwy do policzenia (D-049).
+    BAD_DATA = "bad_data"
