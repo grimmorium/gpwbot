@@ -1,1 +1,1 @@
-python agent.py --base-url http://localhost:8080/v1 --model qwen --allow-google-api --google-api-key XXX --use-google-api-only --google-model gemini-flash-latest --show-prompt --execute --yes
+python agent.py --base-url http://localhost:8080/v1 --model qwen --allow-google-api --google-api-key AQ.Ab8RN6LeRM8MZfCbTje4a7lAkJkS9jKZKbCws76NgIopRpOUyQ --use-google-api-only --google-model gemini-flash-latest --show-prompt --execute --yes
