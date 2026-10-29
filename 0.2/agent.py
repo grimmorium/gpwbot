@@ -107,8 +107,9 @@ class Bar:
     volume: float
 
 
-def fetch_stooq(symbol: str) -> list[Bar]:
-    text = http_get(f"https://stooq.pl/q/d/l/?s={urllib.parse.quote(symbol.lower())}&i=d")
+def fetch_stooq(symbol: str) -> tuple[list[Bar], str]:
+    url = f"https://stooq.pl/q/d/l/?s={urllib.parse.quote(symbol.lower())}&i=d"
+    text = http_get(url)
     lines = text.strip().splitlines()
     if not lines or not lines[0].lower().startswith("date"):
         raise RuntimeError(f"Stooq zwrócił nie-CSV: {text[:80]!r}")
@@ -123,10 +124,10 @@ def fetch_stooq(symbol: str) -> list[Bar]:
             continue
     if not bars:
         raise RuntimeError("Stooq: brak danych")
-    return bars[-150:]
+    return bars[-150:], url
 
 
-def fetch_yahoo(symbol: str) -> list[Bar]:
+def fetch_yahoo(symbol: str) -> tuple[list[Bar], str]:
     ysym = "WIG20.WA" if symbol.upper() == "WIG20" else f"{symbol.upper()}.WA"
     url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
            f"{urllib.parse.quote(ysym)}?range=6mo&interval=1d")
@@ -142,14 +143,16 @@ def fetch_yahoo(symbol: str) -> list[Bar]:
                         q["high"][i] or c, q["low"][i] or c, c, q["volume"][i] or 0))
     if not bars:
         raise RuntimeError("Yahoo: brak danych")
-    return bars
+    return bars, url
 
 
-def get_history(symbol: str) -> tuple[list[Bar], str]:
+def get_history(symbol: str) -> tuple[list[Bar], dict]:
+    """Zwraca (słupki, {"provider": nazwa_źródła, "url": adres_pobrania})."""
     errors = []
     for name, fn in (("stooq", fetch_stooq), ("yahoo", fetch_yahoo)):
         try:
-            return fn(symbol), name
+            bars, url = fn(symbol)
+            return bars, {"provider": name, "url": url}
         except Exception as exc:  # noqa: BLE001 — chcemy spróbować kolejnego źródła
             errors.append(f"{name}: {exc}")
     raise RuntimeError("; ".join(errors))
@@ -210,7 +213,7 @@ def market_line(ticker: str, name: str, ind: dict) -> str:
 
 # --------------------------------------------------------------------------- newsy
 
-def google_news(query: str, limit: int, days: int) -> list[str]:
+def google_news(query: str, limit: int, days: int) -> tuple[list[str], str]:
     q = urllib.parse.quote(f"{query} when:{days}d")
     url = f"https://news.google.com/rss/search?q={q}&hl=pl&gl=PL&ceid=PL:pl"
     root = ET.fromstring(http_get(url))
@@ -222,7 +225,7 @@ def google_news(query: str, limit: int, days: int) -> list[str]:
             out.append(f"{date} {title}".strip())
         if len(out) >= limit:
             break
-    return out
+    return out, url
 
 
 # --------------------------------------------------------------------------- prompt
@@ -444,21 +447,24 @@ def main(argv=None) -> int:
     log(f"[2/5] Pobieranie notowań ({len(universe)} spółek)…")
     prices: dict[str, Decimal] = {}
     market_lines: list[str] = []
+    quote_sources: dict[str, dict] = {}
     for t, name in universe.items():
         try:
             bars, src = get_history(t)
+            quote_sources[t] = src
             ind = indicators(bars)
             prices[t] = Decimal(str(ind["close"]))
             market_lines.append(market_line(t, name, ind))
             age = (now.date() - datetime.strptime(ind["date"], "%Y-%m-%d").date()).days
             if age > 5:
-                warnings.append(f"{t}: ostatnie notowanie sprzed {age} dni (źródło {src}).")
+                warnings.append(f"{t}: ostatnie notowanie sprzed {age} dni (źródło {src['provider']}).")
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"{t}: brak notowań ({exc}).")
             log(f"  ! {t}: {exc}")
     index_line = None
     try:
-        ibars, _ = get_history("WIG20")
+        ibars, isrc = get_history("WIG20")
+        quote_sources["WIG20"] = isrc
         index_line = market_line("WIG20", "indeks", indicators(ibars))
     except Exception as exc:  # noqa: BLE001
         warnings.append(f"Brak danych indeksu WIG20 ({exc}).")
@@ -480,18 +486,24 @@ def main(argv=None) -> int:
     # 3. newsy
     log("[3/5] Pobieranie newsów…")
     news: dict[str, list[str]] = {}
+    news_sources: dict[str, str] = {}
     for t, name in universe.items():
         if t not in prices:
             continue
         try:
-            news[t] = google_news(f"{name} GPW", args.news_per_ticker, args.news_days)
+            items, url = google_news(f"{name} GPW", args.news_per_ticker, args.news_days)
+            news[t] = items
+            news_sources[t] = url
         except Exception as exc:  # noqa: BLE001
             news[t] = []
             log(f"  ! newsy {t}: {exc}")
     macro: list[str] = []
+    macro_sources: list[str] = []
     for q in MACRO_QUERIES:
         try:
-            macro += google_news(q, 3, args.news_days)
+            items, url = google_news(q, 3, args.news_days)
+            macro += items
+            macro_sources.append(url)
         except Exception as exc:  # noqa: BLE001
             log(f"  ! newsy '{q}': {exc}")
 
@@ -531,6 +543,11 @@ def main(argv=None) -> int:
         "orders": [{"ticker": t.ticker, "side": t.side, "qty": t.qty, "price": str(t.price),
                     "cash_delta": str(t.cash_delta), "reason": t.reason} for t in txs],
         "notes": notes,
+        "sources": {
+            "quotes": quote_sources,
+            "news_tickers": news_sources,
+            "news_macro": macro_sources,
+        },
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"\nZapisano log: {run_file}")
 
