@@ -1,0 +1,44 @@
+Używając standardowych bibliotek Python napisz aplikację w języku Python która pozwalała na wprowadzanie do tabeli opisanej poniżej nowych wpisów.
+
+CREATE TABLE [OPERATIONS]
+(
+ID IDENTITY AUTO_INCREMENT, 
+ITEM_NAME VARCHAR(50) NOT NULL,
+ITEM_AMOUNT NUMBER(20,5)
+);
+
+Aplikacja ma posiadać GUI które będzie miało dwie zakładki:
+zakładka 1: nazwa TOTAL
+	ma przedstawiać dane zwracane przez SQL
+	SELECT 
+	ITEM_NAME,
+	SUM(ITEM_AMOUNT)
+	FROM
+	[OPERATIONS]
+	GROUP BY ITEM_NAME HAVING SUM(ITEM_AMOUNT) != 0;
+zakładka 2: nazwa LIST
+	ma przedstawiać dane zwracane przez SQL
+	SELECT 
+	ID,
+	ITEM_NAME,
+	ITEM_AMOUNT
+	FROM
+	[OPERATIONS]
+	ORDER BY ID DESC;
+	
+w zakładce TOTAL ma znajdować się przycisk "TRANSACTION", użycie przycisku sprawi że pogawi się okno z elementami:
+- Item 1
+	Item name: typ danych VARCHAR(50)
+	Item amount: typ danych NUMBER(20,5)
+- Item 2
+	Item name: typ danych VARCHAR(50)
+	Item amount: typ danych NUMBER(20,5)
+
+Przyciski OK i CANCEL
+
+wszystkie elementy Item name i Item amount są obowiązkowe do wprowadzenia. Przycisk CANCEL zamyka okno.
+Użycie przycisku OK sprawia że dodawane są wwa wpisy w bazie danych:
+INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT) VALUES ([Item 1 name], [Item 1 amount]);
+INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT) VALUES ([Item 2 name], [Item 2 amount]);
+
+Aplikacja wywołana z linii komend używając parametru "-l" ma zwrócić na standardowy output wynik danych z zakładki TOTAL
