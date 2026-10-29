@@ -28,6 +28,7 @@ import re
 import statistics
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -55,6 +56,17 @@ MACRO_QUERIES = [
 
 
 # --------------------------------------------------------------------------- HTTP
+
+# Dziennik pobrań — każdy odczyt URL-a (także nieudany) z czasem trwania [s].
+FETCH_LOG: list[dict] = []
+
+
+def record_fetch(url: str, ok: bool, seconds: float, error: str | None = None) -> None:
+    rec = {"url": url, "ok": ok, "seconds": round(seconds, 3)}
+    if not ok and error is not None:
+        rec["error"] = str(error)
+    FETCH_LOG.append(rec)
+
 
 def http_get(url: str, timeout: int = 20) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -107,9 +119,13 @@ class Bar:
     volume: float
 
 
-def fetch_stooq(symbol: str) -> tuple[list[Bar], str]:
-    url = f"https://stooq.pl/q/d/l/?s={urllib.parse.quote(symbol.lower())}&i=d"
-    text = http_get(url)
+def stooq_url(symbol: str) -> str:
+    #return f"https://stooq.pl/q/d/l/?s={urllib.parse.quote(symbol.lower())}&i=d"
+    return f""
+
+
+def parse_stooq(text: str) -> list[Bar]:
+    """Parsuje CSV Stooq-a; zwraca ostatnie 150 słupków."""
     lines = text.strip().splitlines()
     if not lines or not lines[0].lower().startswith("date"):
         raise RuntimeError(f"Stooq zwrócił nie-CSV: {text[:80]!r}")
@@ -124,14 +140,23 @@ def fetch_stooq(symbol: str) -> tuple[list[Bar], str]:
             continue
     if not bars:
         raise RuntimeError("Stooq: brak danych")
-    return bars[-150:], url
+    return bars[-150:]
 
 
-def fetch_yahoo(symbol: str) -> tuple[list[Bar], str]:
+def fetch_stooq(symbol: str) -> tuple[list[Bar], str]:
+    url = stooq_url(symbol)
+    return parse_stooq(http_get(url)), url
+
+
+def yahoo_url(symbol: str) -> str:
     ysym = "WIG20.WA" if symbol.upper() == "WIG20" else f"{symbol.upper()}.WA"
-    url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
-           f"{urllib.parse.quote(ysym)}?range=6mo&interval=1d")
-    data = json.loads(http_get(url))
+    return ("https://query1.finance.yahoo.com/v8/finance/chart/"
+            f"{urllib.parse.quote(ysym)}?range=6mo&interval=1d")
+
+
+def parse_yahoo(text: str) -> list[Bar]:
+    """Parsuje JSON Yahoo Finance."""
+    data = json.loads(text)
     res = data["chart"]["result"][0]
     q = res["indicators"]["quote"][0]
     bars = []
@@ -143,18 +168,48 @@ def fetch_yahoo(symbol: str) -> tuple[list[Bar], str]:
                         q["high"][i] or c, q["low"][i] or c, c, q["volume"][i] or 0))
     if not bars:
         raise RuntimeError("Yahoo: brak danych")
-    return bars, url
+    return bars
 
 
-def get_history(symbol: str) -> tuple[list[Bar], dict]:
-    """Zwraca (słupki, {"provider": nazwa_źródła, "url": adres_pobrania})."""
-    errors = []
-    for name, fn in (("stooq", fetch_stooq), ("yahoo", fetch_yahoo)):
+def fetch_yahoo(symbol: str) -> tuple[list[Bar], str]:
+    url = yahoo_url(symbol)
+    return parse_yahoo(http_get(url)), url
+
+
+def parse_bars(text: str) -> tuple[list[Bar], str]:
+    """Parsuje odpowiedź jako CSV (Stooq); w razie niepowodzenia JSON (Yahoo)."""
+    try:
+        return parse_stooq(text), "stooq"
+    except Exception as exc_csv:  # noqa: BLE001 — spróbuj drugiego formatu
         try:
-            bars, url = fn(symbol)
-            return bars, {"provider": name, "url": url}
+            return parse_yahoo(text), "yahoo"
+        except Exception:  # noqa: BLE001
+            raise RuntimeError(f"nieznany format danych ({exc_csv})") from None
+
+
+def get_history(symbol: str, urls: list[str] | None = None) -> tuple[list[Bar], dict]:
+    """Zwraca (słupki, {"provider": nazwa_źródła, "url": adres_pobrania}).
+
+    `urls` — opcjonalna lista adresów do próbowania po kolei; bez niej
+    standardowe źródła dla symbolu: Stooq (CSV), potem Yahoo (JSON).
+    """
+    if urls is None:
+        candidates = (("stooq", stooq_url(symbol)), ("yahoo", yahoo_url(symbol)))
+    else:
+        if not urls:
+            raise ValueError("pusta lista URL-i")
+        candidates = tuple((url, url) for url in urls)
+    errors = []
+    for label, url in candidates:
+        t0 = time.perf_counter()
+        try:
+            bars, provider = parse_bars(http_get(url))
         except Exception as exc:  # noqa: BLE001 — chcemy spróbować kolejnego źródła
-            errors.append(f"{name}: {exc}")
+            record_fetch(url, False, time.perf_counter() - t0, str(exc))
+            errors.append(f"{label}: {exc}")
+        else:
+            record_fetch(url, True, time.perf_counter() - t0)
+            return bars, {"provider": provider, "url": url}
     raise RuntimeError("; ".join(errors))
 
 
@@ -213,10 +268,19 @@ def market_line(ticker: str, name: str, ind: dict) -> str:
 
 # --------------------------------------------------------------------------- newsy
 
-def google_news(query: str, limit: int, days: int) -> tuple[list[str], str]:
+def news_url(query: str, days: int) -> str:
     q = urllib.parse.quote(f"{query} when:{days}d")
-    url = f"https://news.google.com/rss/search?q={q}&hl=pl&gl=PL&ceid=PL:pl"
-    root = ET.fromstring(http_get(url))
+    return f"https://news.google.com/rss/search?q={q}&hl=pl&gl=PL&ceid=PL:pl"
+
+
+def google_news(query: str, limit: int, days: int) -> tuple[list[str], str]:
+    url = news_url(query, days)
+    t0 = time.perf_counter()
+    try:
+        root = ET.fromstring(http_get(url))
+    except Exception as exc:  # noqa: BLE001 — nieudane pobranie też trafia do dziennika
+        record_fetch(url, False, time.perf_counter() - t0, str(exc))
+        raise
     out = []
     for item in root.iter("item"):
         title = (item.findtext("title") or "").strip()
@@ -225,6 +289,7 @@ def google_news(query: str, limit: int, days: int) -> tuple[list[str], str]:
             out.append(f"{date} {title}".strip())
         if len(out) >= limit:
             break
+    record_fetch(url, True, time.perf_counter() - t0)
     return out, url
 
 
@@ -548,6 +613,7 @@ def main(argv=None) -> int:
             "news_tickers": news_sources,
             "news_macro": macro_sources,
         },
+        "fetch_log": FETCH_LOG,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     log(f"\nZapisano log: {run_file}")
 

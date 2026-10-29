@@ -1,0 +1,501 @@
+{
+  "time": "2026-10-29T18:15:15.293560",
+  "system": "Jesteś ostrożnym analitykiem giełdowym specjalizującym się w Giełdzie Papierów Wartościowych w Warszawie (GPW). Zarządzasz WIRTUALNYM portfelem i proponujesz transakcje.\n\nZasady:\n- Operujesz wyłącznie na tickerach z sekcji NOTOWANIA. Nie wymyślaj danych, których nie dostałeś.\n- Tylko pozycje długie: bez krótkiej sprzedaży, bez dźwigni. Zakup nie może przekroczyć dostępnej gotówki, sprzedaż nie może przekroczyć liczby posiadanych sztuk.\n- Ilości są całkowite (pełne akcje). Zakładaj wykonanie po podanym kursie.\n- Pilnuj dywersyfikacji: żadna pozycja nie powinna przekraczać 25% wartości portfela.\n- Nie handluj dla samego handlu. Pusta lista zleceń to w pełni poprawna decyzja.\n- Uzasadnienie każdego zlecenia: 1–2 zdania, odwołanie do konkretnych danych (trend, RSI, newsy).\n- Uwzględnij koszt prowizji (0% na transakcję).\n\nOdpowiedz WYŁĄCZNIE jednym obiektem JSON, bez markdowna i bez tekstu poza nim:\n{\"analysis\": \"krótkie podsumowanie sytuacji (max 5 zdań)\",\n  \"orders\": [{\"ticker\": \"PKN\", \"side\": \"BUY\" lub \"SELL\", \"quantity\": liczba_całkowita, \"reason\": \"...\"}]}\nMaksymalnie 5 zleceń.",
+  "user": "Data i czas: 2026-10-29 18:15 (czas lokalny). Waluta: PLN.\n\n## PORTFEL (wartość całkowita ≈ 5000.00 PLN)\nGotówka (PLN): 5000.00\nBrak pozycji akcyjnych.\n\n## NOTOWANIA (dzienne, ostatnie zamknięcie)\nWIG20 (indeks) | kurs 4283.82 z 2026-10-29 | 1d n/d% | 5d n/d% | 20d n/d% | SMA20 n/d | SMA50 n/d | RSI14 n/d | zmienność20d n/d% | wolumen/śr20d n/dx | min60d 4243.97 max60d 4291.30\nPKN (Orlen) | kurs 147.00 z 2026-10-29 | 1d -1.8% | 5d -3.6% | 20d +0.6% | SMA20 152.24 | SMA50 153.02 | RSI14 32 | zmienność20d 2.1% | wolumen/śr20d 1.6x | min60d 141.20 max60d 164.12\nPKO (PKO Bank Polski) | kurs 118.40 z 2026-10-29 | 1d +2.0% | 5d +5.3% | 20d -1.1% | SMA20 115.57 | SMA50 117.42 | RSI14 58 | zmienność20d 1.9% | wolumen/śr20d 1.2x | min60d 107.56 max60d 125.58\nPZU (PZU) | kurs 73.30 z 2026-10-29 | 1d -0.5% | 5d -0.5% | 20d +4.5% | SMA20 72.77 | SMA50 73.43 | RSI14 83 | zmienność20d 0.7% | wolumen/śr20d 3.3x | min60d 69.18 max60d 77.20\nPEO (Bank Pekao) | kurs 270.60 z 2026-10-29 | 1d +1.6% | 5d +5.5% | 20d -0.1% | SMA20 263.96 | SMA50 266.27 | RSI14 58 | zmienność20d 1.6% | wolumen/śr20d 1.1x | min60d 249.60 max60d 285.90\nKGH (KGHM) | kurs 303.05 z 2026-10-29 | 1d -0.3% | 5d +2.1% | 20d -5.7% | SMA20 322.25 | SMA50 336.65 | RSI14 24 | zmienność20d 2.5% | wolumen/śr20d 0.9x | min60d 290.50 max60d 383.90\nDNP (Dino Polska) | kurs 38.40 z 2026-10-29 | 1d +1.8% | 5d -2.9% | 20d +11.1% | SMA20 37.02 | SMA50 36.13 | RSI14 68 | zmienność20d 2.0% | wolumen/śr20d 1.5x | min60d 31.62 max60d 39.68\nALE (Allegro) | kurs 59.90 z 2026-10-29 | 1d +1.4% | 5d +1.5% | 20d +20.8% | SMA20 55.04 | SMA50 50.13 | RSI14 92 | zmienność20d 1.2% | wolumen/śr20d 0.8x | min60d 43.85 max60d 60.05\nLPP (LPP) | kurs 27100.00 z 2026-10-29 | 1d +0.8% | 5d -0.5% | 20d +9.5% | SMA20 25918.00 | SMA50 23804.00 | RSI14 76 | zmienność20d 1.6% | wolumen/śr20d 1.2x | min60d 20460.00 max60d 27240.00\nCDR (CD Projekt) | kurs 270.30 z 2026-10-29 | 1d +1.2% | 5d +0.5% | 20d +6.2% | SMA20 263.16 | SMA50 249.90 | RSI14 60 | zmienność20d 1.3% | wolumen/śr20d 0.9x | min60d 226.00 max60d 272.90\nPGE (PGE) | kurs 16.45 z 2026-10-29 | 1d +1.2% | 5d -1.5% | 20d +6.4% | SMA20 16.32 | SMA50 14.27 | RSI14 47 | zmienność20d 2.7% | wolumen/śr20d 0.8x | min60d 9.94 max60d 17.55\nMBK (mBank) | kurs 1667.50 z 2026-10-29 | 1d +3.5% | 5d +18.4% | 20d +18.4% | SMA20 1441.20 | SMA50 1434.27 | RSI14 76 | zmienność20d 2.9% | wolumen/śr20d 2.9x | min60d 1327.50 max60d 1701.00\nKTY (Grupa Kęty) | kurs 1269.00 z 2026-10-29 | 1d +0.2% | 5d +2.3% | 20d +3.0% | SMA20 1256.75 | SMA50 1248.82 | RSI14 47 | zmienność20d 1.7% | wolumen/śr20d 1.2x | min60d 1141.00 max60d 1317.00\nOPL (Orange Polska) | kurs 16.64 z 2026-10-29 | 1d -1.2% | 5d +3.8% | 20d +15.4% | SMA20 15.78 | SMA50 14.59 | RSI14 64 | zmienność20d 2.1% | wolumen/śr20d 1.4x | min60d 12.83 max60d 17.01\nPCO (Pepco Group) | kurs 50.96 z 2026-10-29 | 1d +1.9% | 5d +6.0% | 20d +14.2% | SMA20 46.28 | SMA50 44.09 | RSI14 80 | zmienność20d 1.8% | wolumen/śr20d 0.7x | min60d 39.71 max60d 50.98\nALR (Alior Bank) | kurs 142.00 z 2026-10-29 | 1d +3.3% | 5d +8.8% | 20d +7.2% | SMA20 132.39 | SMA50 133.67 | RSI14 74 | zmienność20d 1.7% | wolumen/śr20d 2.3x | min60d 126.80 max60d 142.65\nKRU (Kruk) | kurs 340.00 z 2026-10-29 | 1d +2.1% | 5d -4.0% | 20d -8.0% | SMA20 352.46 | SMA50 378.75 | RSI14 45 | zmienność20d 2.8% | wolumen/śr20d 1.1x | min60d 330.30 max60d 447.00\nBDX (Budimex) | kurs 702.40 z 2026-10-29 | 1d +0.3% | 5d -0.2% | 20d +6.2% | SMA20 698.73 | SMA50 701.55 | RSI14 54 | zmienność20d 1.9% | wolumen/śr20d 3.3x | min60d 653.00 max60d 769.00\nTPE (Tauron) | kurs 9.15 z 2026-10-29 | 1d +0.0% | 5d -5.3% | 20d +0.3% | SMA20 9.38 | SMA50 9.08 | RSI14 40 | zmienność20d 2.2% | wolumen/śr20d 0.6x | min60d 8.20 max60d 9.85\nJSW (JSW) | kurs 27.78 z 2026-10-29 | 1d -1.0% | 5d -8.0% | 20d -10.7% | SMA20 31.25 | SMA50 33.18 | RSI14 11 | zmienność20d 2.5% | wolumen/śr20d 1.4x | min60d 25.77 max60d 39.94\n\n## NEWSY SPÓŁEK (nagłówki z ostatnich dni)\n[PKN]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 29 Oct 2026 Przestrzelony Orlen i gigantyczna wyprzedaż Polsatu. Grube ryby po cichu ewakuują się z giełdy [PKN Orlen akcje prognozy] - FXMAG\n- 29 Oct 2026 DZIEŃ NA GPW: Większość głównych indeksów na nowych maksimach; rosną banki, ale spada KGHM - Strefa Inwestorów\n[PKO]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 Ekspert o giełdzie: Ryzyka są, ale Warszawa się broni, a wyceny nie są wysokie - Parkiet\n- 27 Oct 2026 mBank i PKO BP mocno w górę na GPW, banki liderami wtorkowej sesji - Inwestycje.pl\n[PZU]\n- 28 Oct 2026 Obligacyjne ETF-y od TFI PZU debiutują na GPW - Analizy.pl\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 ETF na „polską giełdę”. Sprawdzamy PZU ETF WIG20 TR + mWIG40 TR - StockWatch.pl\n[PEO]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 29 Oct 2026 Bank Pekao pokazał wyniki. Zysk netto mocno w dół - wnp.pl\n- 29 Oct 2026 To warto wiedzieć przed sesją na GPW 29 X 2026 - pb.pl\n[KGH]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 29 Oct 2026 DZIEŃ NA GPW: Większość głównych indeksów na nowych maksimach; rosną banki, ale spada KGHM - Strefa Inwestorów\n- 29 Oct 2026 Kolejny rekord WIG. Cyfrowy Polsat tonie. Dzień na GPW 29 października - XYZ\n[DNP]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 29 Oct 2026 Biedronka rozczarowała. Jak zareaguje Dino? - Parkiet\n- 28 Oct 2026 Mapa GPW: mBank, XTB, Dino, Kruk i Mirbud w centrum uwagi - pb.pl\n[ALE]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 Na giełdzie hossa, a duzi akcjonariusze sprzedają akcje. Na XTB i Allegro się nie kończy - XYZ\n- 28 Oct 2026 Kto zaskoczy, kto rozczaruje w sezonie wyników na GPW. Oto typy analityków - pb.pl\n[LPP]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 LPP (-1.85%) - LPP SA - Stooq\n- 28 Oct 2026 Sezon wyników za III kwartał 2026 na GPW. Te spółki mogą pozytywnie zaskoczyć - StockWatch.pl\n[CDR]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 Miliony złotych dla spółek z GPW. CD Projekt i WP z dotacjami od NCBR - Bankier.pl\n- 28 Oct 2026 5 nowych spółek w Top Picks DM BOŚ na październik - Strefa Inwestorów\n[PGE]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 29 Oct 2026 DZIEŃ NA GPW: Większość głównych indeksów na nowych maksimach; rosną banki, ale spada KGHM - Strefa Inwestorów\n- 27 Oct 2026 Dywidenda wraca do PGE po 10 latach, a gwiazdy GPW tracą po 20%! - DNA Rynków\n[MBK]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 Mapa GPW: mBank, XTB, Dino, Kruk i Mirbud w centrum uwagi - pb.pl\n- 29 Oct 2026 Oto, co się dzieje na GPW. mBank pokazał wyniki, co na to kurs akcji? - FXMAG\n[KTY]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 To warto wiedzieć przed sesją na GPW 27 X 2026 - pb.pl\n- 28 Oct 2026 Szok na GPW! mBank eksplodował wzrostami, Kruk i Budimex zaliczyły bolesny zjazd - Inwestycje.pl\n[OPL]\n- 27 Oct 2026 Orange Polska: prognoza EBITDAaL na 2026 i przejęcie Nexery - StockWatch.pl\n- 27 Oct 2026 Akcje Orange Polska wystrzeliły o 5,7%. Zysk w III kw. rośnie o 44% - Comparic.pl\n- 27 Oct 2026 Orange Polska zakłada niski do średniego jednocyfrowy wzrost EBITDAaL średnioterminowo - Inwestycje.pl\n[PCO]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 PCO (-0.92%) - Pepco Group NV - Stooq\n- 28 Oct 2026 Szok na GPW! mBank eksplodował wzrostami, Kruk i Budimex zaliczyły bolesny zjazd - Inwestycje.pl\n[ALR]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 27 Oct 2026 Mapa GPW: Millennium, Alior, Murapol, Elektrotim i Virtus w centrum uwagi - pb.pl\n- 27 Oct 2026 GPW kontynuuje zryw pomimo coraz słabszego złotego - Parkiet\n[KRU]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 mBank, Trakcja, Budimex, Kruk. Zwycięzcy i przegrani sesji na GPW 28 X 2026 - pb.pl\n- 28 Oct 2026 DZIEŃ NA GPW: WIG20 na neutralnym poziomie, ale Kruk i Budimex spadają o 7-8 proc. - Strefa Inwestorów\n[BDX]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 mBank, Trakcja, Budimex, Kruk. Zwycięzcy i przegrani sesji na GPW 28 X 2026 - pb.pl\n- 28 Oct 2026 DZIEŃ NA GPW: WIG20 na neutralnym poziomie, ale Kruk i Budimex spadają o 7-8 proc. - Strefa Inwestorów\n[TPE]\n- 29 Oct 2026 Zielono na GPW! Modivo i mBank wystrzeliły, Orlen pod presją - Inwestycje.pl\n- 28 Oct 2026 Tauron już nie urośnie? Za to PGE o 23%, a Enea aż o 40%! Eksperci zmieniają wyceny i zalecenia dla energetyki z GPW - Comparic.pl\n- 27 Oct 2026 Murapol, Orange, PGE i Tauron - te spółki mogą dziś przynieść zmienność na GPW - FXMAG\n[JSW]\n- 29 Oct 2026 Asbis, XTB, Polsat, Digital Network, Dino, JSW - wyniki, komentarze, wyceny. Analiza gigantów GPW w trakcie sesji - Comparic.pl\n- 28 Oct 2026 Zaskakujący dzień na GPW. „Nastąpiło przetasowanie na pozycji liderów” - Strefa Biznesu\n- 29 Oct 2026 JSW na giełdowej równi pochyłej. Dużo złych informacji jest wycenianych. Czy pożyczka zatrzyma przecenę? - Comparic.pl\n\n## NEWSY OGÓLNE / MAKRO\n- 29 Oct 2026 Chciwość znów zwyciężyła. Kolejne rekordy indeksów na GPW. Oddech złapał też złoty - Parkiet\n- 29 Oct 2026 Kolejny rekord WIG. Cyfrowy Polsat tonie. Dzień na GPW 29 października - XYZ\n- 28 Oct 2026 mBank, Trakcja, Budimex, Kruk. Zwycięzcy i przegrani sesji na GPW 28 X 2026 - pb.pl\n- 27 Oct 2026 Rada Polityki Pieniężnej zakończyła październikowe posiedzenie. Wiemy, co dalej ze stopami procentowymi - Strefa Inwestorów\n- 29 Oct 2026 Kredytobiorcy mogą się rozczarować. Ekspertka studzi nadzieje na obniżki - Radio ESKA\n- 27 Oct 2026 Stopy procentowe znów w górę? GPW jest dziś znacznie tańsza niż Wall Street - Investing.com Polska: Kursy walut, kryptowalut, notowania akcji\n- 29 Oct 2026 Inflacja w strefie euro najwyższa od września 2023 roku. Polska na unijnej średniej - Analizy.pl\n- 29 Oct 2026 Szczyt cyklu gospodarczego w Polsce minął; dynamika PKB będzie stopniowo hamować – PKO BP (wywiad) - Strefa Inwestorów\n- 29 Oct 2026 Halloween na rynkach. Ropa, gaz i obawy o bańkę AI - CEO Magazyn\n- 29 Oct 2026 Europa stawia na nowe chipy. Polska szykuje miliardy na przemysł - Rzeczpospolita\n- 29 Oct 2026 Europejski rynek akcji rośnie dzięki dobrym wynikom i prognozom spółek - pb.pl\n- 28 Oct 2026 DZIEŃ NA RYNKACH: Indeksy w Europie lekko zwyżkowały; rynki czekają na Fed - Strefa Inwestorów\n\n## OSTRZEŻENIA O DANYCH\n- SPL: brak notowań (stooq: unknown url type: ''; yahoo: HTTP Error 404: Not Found).\n\nZaproponuj transakcje na dziś (JSON zgodny z opisem).",
+  "llm_raw": "{\"analysis\":\"Rynek WIG20 jest blisko maksimów 60-dniowych, więc buduję portfel ostrożnie z umiarkowaną ekspozycją i rezerwą gotówki. Wybieram spółki z potwierdzonym trendem wzrostowym i pozytywnymi newsami: OPL po silnym Q3/prognozie/Nexerze, PKO jako lider banków z RSI58 oraz PGE/CDR w umiarkowanym wykupieniu. Unikam mocno wykupionych ALE/PZU/PCO i słabych KGH/JSW/PKN. Każda pozycja mieści się poniżej 25% wartości portfela, a łączny zakup nie przekracza gotówki.\",\"orders\":[{\"ticker\":\"OPL\",\"side\":\"BUY\",\"quantity\":60,\"reason\":\"Kurs +15.4% w 20 dni i RSI64 potwierdzają trend wzrostowy. Newsy o zysku Q3 +44%, prognozie EBITDAaL i przejęciu Nexery wspierają wejście.\"},{\"ticker\":\"PKO\",\"side\":\"BUY\",\"quantity\":8,\"reason\":\"Banki są liderami sesji, a PKO ma +5.3% w 5 dni, RSI58 i kurs powyżej SMA20. Pozycja jest mniejsza niż limit 25%, aby zachować bufor przy rekordowym WIG20.\"},{\"ticker\":\"CDR\",\"side\":\"BUY\",\"quantity\":3,\"reason\":\"Trend wzrostowy +6.2% w 20 dni i RSI60 wskazują na kontynuację, a dotacje NCBR oraz Top Picks DM BOŚ wspierają sentyment.\"},{\"ticker\":\"PGE\",\"side\":\"BUY\",\"quantity\":50,\"reason\":\"RSI47 po korekcie w trendzie +6.4% 20d daje lepszy stosunek ryzyka niż mocno wykupione spółki, a newsy o powrocie dywidendy i zmianie wycen energetyki wspierają pozycję.\"}]}",
+  "orders": [
+    {
+      "ticker": "OPL",
+      "side": "BUY",
+      "qty": 60,
+      "price": "16.635000228881836",
+      "cash_delta": "-998.10",
+      "reason": "Kurs +15.4% w 20 dni i RSI64 potwierdzają trend wzrostowy. Newsy o zysku Q3 +44%, prognozie EBITDAaL i przejęciu Nexery wspierają wejście."
+    },
+    {
+      "ticker": "PKO",
+      "side": "BUY",
+      "qty": 8,
+      "price": "118.4000015258789",
+      "cash_delta": "-947.20",
+      "reason": "Banki są liderami sesji, a PKO ma +5.3% w 5 dni, RSI58 i kurs powyżej SMA20. Pozycja jest mniejsza niż limit 25%, aby zachować bufor przy rekordowym WIG20."
+    },
+    {
+      "ticker": "CDR",
+      "side": "BUY",
+      "qty": 3,
+      "price": "270.29998779296875",
+      "cash_delta": "-810.90",
+      "reason": "Trend wzrostowy +6.2% w 20 dni i RSI60 wskazują na kontynuację, a dotacje NCBR oraz Top Picks DM BOŚ wspierają sentyment."
+    },
+    {
+      "ticker": "PGE",
+      "side": "BUY",
+      "qty": 50,
+      "price": "16.450000762939453",
+      "cash_delta": "-822.50",
+      "reason": "RSI47 po korekcie w trendzie +6.4% 20d daje lepszy stosunek ryzyka niż mocno wykupione spółki, a newsy o powrocie dywidendy i zmianie wycen energetyki wspierają pozycję."
+    }
+  ],
+  "notes": [],
+  "sources": {
+    "quotes": {
+      "PKN": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PKN.WA?range=6mo&interval=1d"
+      },
+      "PKO": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PKO.WA?range=6mo&interval=1d"
+      },
+      "PZU": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PZU.WA?range=6mo&interval=1d"
+      },
+      "PEO": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PEO.WA?range=6mo&interval=1d"
+      },
+      "KGH": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/KGH.WA?range=6mo&interval=1d"
+      },
+      "DNP": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/DNP.WA?range=6mo&interval=1d"
+      },
+      "ALE": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/ALE.WA?range=6mo&interval=1d"
+      },
+      "LPP": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/LPP.WA?range=6mo&interval=1d"
+      },
+      "CDR": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/CDR.WA?range=6mo&interval=1d"
+      },
+      "PGE": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PGE.WA?range=6mo&interval=1d"
+      },
+      "MBK": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/MBK.WA?range=6mo&interval=1d"
+      },
+      "KTY": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/KTY.WA?range=6mo&interval=1d"
+      },
+      "OPL": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/OPL.WA?range=6mo&interval=1d"
+      },
+      "PCO": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/PCO.WA?range=6mo&interval=1d"
+      },
+      "ALR": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/ALR.WA?range=6mo&interval=1d"
+      },
+      "KRU": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/KRU.WA?range=6mo&interval=1d"
+      },
+      "BDX": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/BDX.WA?range=6mo&interval=1d"
+      },
+      "TPE": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/TPE.WA?range=6mo&interval=1d"
+      },
+      "JSW": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/JSW.WA?range=6mo&interval=1d"
+      },
+      "WIG20": {
+        "provider": "yahoo",
+        "url": "https://query1.finance.yahoo.com/v8/finance/chart/WIG20.WA?range=6mo&interval=1d"
+      }
+    },
+    "news_tickers": {
+      "PKN": "https://news.google.com/rss/search?q=Orlen%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "PKO": "https://news.google.com/rss/search?q=PKO%20Bank%20Polski%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "PZU": "https://news.google.com/rss/search?q=PZU%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "PEO": "https://news.google.com/rss/search?q=Bank%20Pekao%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "KGH": "https://news.google.com/rss/search?q=KGHM%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "DNP": "https://news.google.com/rss/search?q=Dino%20Polska%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ALE": "https://news.google.com/rss/search?q=Allegro%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "LPP": "https://news.google.com/rss/search?q=LPP%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "CDR": "https://news.google.com/rss/search?q=CD%20Projekt%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "PGE": "https://news.google.com/rss/search?q=PGE%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "MBK": "https://news.google.com/rss/search?q=mBank%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "KTY": "https://news.google.com/rss/search?q=Grupa%20K%C4%99ty%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "OPL": "https://news.google.com/rss/search?q=Orange%20Polska%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "PCO": "https://news.google.com/rss/search?q=Pepco%20Group%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ALR": "https://news.google.com/rss/search?q=Alior%20Bank%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "KRU": "https://news.google.com/rss/search?q=Kruk%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "BDX": "https://news.google.com/rss/search?q=Budimex%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "TPE": "https://news.google.com/rss/search?q=Tauron%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "JSW": "https://news.google.com/rss/search?q=JSW%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl"
+    },
+    "news_macro": [
+      "https://news.google.com/rss/search?q=GPW%20WIG20%20sesja%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "https://news.google.com/rss/search?q=RPP%20stopy%20procentowe%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "https://news.google.com/rss/search?q=inflacja%20Polska%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "https://news.google.com/rss/search?q=rynki%20akcji%20Europa%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl"
+    ]
+  },
+  "fetch_log": [
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PKN.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.393
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PKO.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.313
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PZU.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.611
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PEO.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.221
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/KGH.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.232
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/DNP.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.199
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/ALE.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.426
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/LPP.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.229
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/CDR.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.404
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PGE.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.251
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/SPL.WA?range=6mo&interval=1d",
+      "ok": false,
+      "seconds": 0.185,
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/MBK.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.215
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/KTY.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.241
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/OPL.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.286
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/PCO.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.178
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/ALR.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.2
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/KRU.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.281
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/BDX.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 1.343
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/TPE.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.26
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/JSW.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.206
+    },
+    {
+      "url": "",
+      "ok": false,
+      "seconds": 0.0,
+      "error": "unknown url type: ''"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/WIG20.WA?range=6mo&interval=1d",
+      "ok": true,
+      "seconds": 0.313
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Orlen%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.42
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=PKO%20Bank%20Polski%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.431
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=PZU%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.416
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Bank%20Pekao%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.362
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=KGHM%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.319
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Dino%20Polska%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.554
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Allegro%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.367
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=LPP%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.523
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=CD%20Projekt%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.46
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=PGE%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.444
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=mBank%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.304
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Grupa%20K%C4%99ty%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.356
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Orange%20Polska%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.434
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Pepco%20Group%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.376
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Alior%20Bank%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.411
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Kruk%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.334
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Budimex%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.32
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=Tauron%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.388
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=JSW%20GPW%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.411
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=GPW%20WIG20%20sesja%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.464
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=RPP%20stopy%20procentowe%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.415
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=inflacja%20Polska%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.547
+    },
+    {
+      "url": "https://news.google.com/rss/search?q=rynki%20akcji%20Europa%20when%3A3d&hl=pl&gl=PL&ceid=PL:pl",
+      "ok": true,
+      "seconds": 0.427
+    }
+  ]
+}
