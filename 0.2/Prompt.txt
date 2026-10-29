@@ -42,3 +42,15 @@ INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT) VALUES ([Item 1 name], [Item 1 
 INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT) VALUES ([Item 2 name], [Item 2 amount]);
 
 Aplikacja wywołana z linii komend używając parametru "-l" ma zwrócić na standardowy output wynik danych z zakładki TOTAL
+
+
+--------------------------------------
+
+
+
+
+
+
+
+
+

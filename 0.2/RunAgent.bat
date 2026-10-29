@@ -1,0 +1,1 @@
+python agent.py --base-url http://localhost:8080/v1 --model qwen --show-prompt --execute --yes
