@@ -5,7 +5,10 @@ Przepływ:
   1. odczyt portfela:   python app.py -l
   2. notowania GPW:     Stooq (CSV), w razie niepowodzenia Yahoo Finance
   3. newsy:             Google News RSS (nagłówki z ostatnich dni)
-  4. lokalny LLM:       API zgodne z OpenAI (/v1/chat/completions), np. llama.cpp server
+  4. LLM:               lokalny (API zgodne z OpenAI, np. llama.cpp server); opcjonalnie Google API —
+                        --allow-google-api (zapas, gdy lokalny niedostępny) lub
+                        --use-google-api-only (wyłącznie Google; oba wymagają --google-api-key KEY);
+                        --list-google-models wypisuje modele dostępne dla klucza
   5. walidacja zleceń:  w kodzie (stan gotówki, stan posiadania, limity) — nie ufamy LLM-owi
   6. zapis:             python app.py -n "PLN:-KWOTA|TICKER:ILOSC"   (tylko z --execute)
 
@@ -29,6 +32,7 @@ import statistics
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -352,6 +356,69 @@ def chat(base_url, model, api_key, messages, temperature, max_tokens, timeout) -
     return data["choices"][0]["message"]["content"] or ""
 
 
+GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def google_endpoint(model: str) -> str:
+    return f"{GOOGLE_API_BASE}/{urllib.parse.quote(model)}:generateContent"
+
+
+def _google_http_error(exc: urllib.error.HTTPError) -> str:
+    """Czytelny komunikat błędu Google API (z pola 'error.message' w ciele odpowiedzi)."""
+    try:
+        body = json.loads(exc.read().decode("utf-8", "replace"))
+        message = ((body.get("error") or {}).get("message")) or exc.reason
+    except Exception:  # noqa: BLE001 — ciało nie jest JSON-em
+        message = exc.reason
+    return f"HTTP {exc.code}: {message}"
+
+
+def google_chat(model, api_key, system, contents, temperature, max_tokens, timeout) -> str:
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+    req = urllib.request.Request(
+        google_endpoint(model) + "?key=" + urllib.parse.quote(api_key),
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:  # np. 404 — model nie istnieje dla tego klucza
+        raise RuntimeError(f"Google API: {_google_http_error(exc)}") from None
+    cand = (data.get("candidates") or [{}])[0]
+    parts = ((cand.get("content") or {}).get("parts")) or []
+    text = "".join(p.get("text", "") for p in parts)
+    if not text:
+        raise RuntimeError(
+            "Google API zwróciło pustą odpowiedź (finishReason="
+            f"{cand.get('finishReason')}, promptFeedback={data.get('promptFeedback')})"
+        )
+    return text
+
+
+def google_list_models(api_key, timeout=60) -> list[str]:
+    """Nazwy modeli Google API dostępnych dla klucza (tylko z obsługą generateContent)."""
+    url = f"{GOOGLE_API_BASE}?key={urllib.parse.quote(api_key)}"
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Google API: {_google_http_error(exc)}") from None
+    names = []
+    for m in data.get("models", []):
+        name = (m.get("name") or "").removeprefix("models/")
+        methods = m.get("supportedGenerationMethods") or []
+        if not name or (methods and "generateContent" not in methods):
+            continue
+        names.append(name)
+    return sorted(names)
+
+
 def extract_json(text: str) -> dict:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)  # modele "myślące"
     text = re.sub(r"```(?:json)?", "", text)
@@ -361,7 +428,7 @@ def extract_json(text: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
-def ask_llm(args, system: str, user: str) -> tuple[dict, str]:
+def ask_local(args, system: str, user: str) -> tuple[dict, str]:
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     raw = ""
     for attempt in (1, 2):
@@ -375,6 +442,23 @@ def ask_llm(args, system: str, user: str) -> tuple[dict, str]:
                          {"role": "user", "content": "To nie jest poprawny JSON. "
                           "Zwróć wyłącznie obiekt JSON zgodny ze schematem."}]
     raise RuntimeError(f"LLM nie zwrócił poprawnego JSON-a. Ostatnia odpowiedź:\n{raw[:1000]}")
+
+
+def ask_google(args, system: str, user: str) -> tuple[dict, str]:
+    contents = [{"role": "user", "parts": [{"text": user}]}]
+    raw = ""
+    for attempt in (1, 2):
+        raw = google_chat(args.google_model, args.google_api_key, system, contents,
+                          args.temperature, args.max_tokens, args.timeout)
+        try:
+            return extract_json(raw), raw
+        except ValueError as exc:  # JSONDecodeError dziedziczy po ValueError
+            log(f"[llm] próba {attempt}: niepoprawny JSON ({exc})")
+            contents += [{"role": "model", "parts": [{"text": raw}]},
+                         {"role": "user", "parts": [
+                             {"text": "To nie jest poprawny JSON. "
+                                      "Zwróć wyłącznie obiekt JSON zgodny ze schematem."}]}]
+    raise RuntimeError(f"LLM (Google API) nie zwrócił poprawnego JSON-a. Ostatnia odpowiedź:\n{raw[:1000]}")
 
 
 # --------------------------------------------------------------------------- walidacja zleceń
@@ -478,6 +562,17 @@ def main(argv=None) -> int:
     p.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL", "http://localhost:8080/v1"))
     p.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "local"))
     p.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", "sk-local"))
+    p.add_argument("--allow-google-api", action="store_true",
+                   help="dozwól Google API jako zapas, gdy lokalny LLM jest niedostępny")
+    p.add_argument("--use-google-api-only", action="store_true",
+                   help="używaj wyłącznie Google API (bez próby lokalnego LLM)")
+    p.add_argument("--google-api-key", default=os.environ.get("GOOGLE_API_KEY"),
+                   help="klucz Google AI Studio — wymagany przy --allow-google-api / "
+                        "--use-google-api-only (domyślnie zmienna GOOGLE_API_KEY)")
+    p.add_argument("--google-model", default=os.environ.get("GOOGLE_MODEL", "gemini-2.5-flash"),
+                   help="model Google API (domyślnie gemini-2.5-flash lub $GOOGLE_MODEL)")
+    p.add_argument("--list-google-models", action="store_true",
+                   help="wypisz modele Google API dostępne dla klucza i zakończ")
     p.add_argument("--temperature", type=float, default=0.2)
     p.add_argument("--max-tokens", type=int, default=8192)
     p.add_argument("--timeout", type=int, default=900, help="timeout zapytania do LLM [s]")
@@ -491,6 +586,17 @@ def main(argv=None) -> int:
     p.add_argument("--show-prompt", action="store_true", help="wypisz prompt wysyłany do LLM")
     p.add_argument("--runs-dir", type=Path, default=HERE / "agent_runs")
     args = p.parse_args(argv)
+
+    if (args.allow_google_api or args.use_google_api_only or args.list_google_models) \
+            and not args.google_api_key:
+        p.error("użycie Google API wymaga --google-api-key KEY "
+                "(albo zmiennej środowiskowej GOOGLE_API_KEY)")
+
+    if args.list_google_models:
+        log("Pobieranie listy modeli Google API…")
+        for name in google_list_models(args.google_api_key):
+            print(name)
+        return 0
 
     fee_frac = args.fee / 100
     now = datetime.now()
@@ -579,8 +685,30 @@ def main(argv=None) -> int:
                              market_lines, index_line, news, macro, warnings)
     if args.show_prompt:
         print("=== SYSTEM ===\n" + system + "\n\n=== USER ===\n" + user + "\n", file=sys.stderr)
-    log(f"[4/5] Zapytanie do LLM ({args.base_url}, model {args.model})…")
-    result, raw = ask_llm(args, system, user)
+
+    def google_info() -> dict:
+        return {"provider": "google", "model": args.google_model,
+                "endpoint": google_endpoint(args.google_model)}
+
+    if args.use_google_api_only:
+        log(f"[4/5] Zapytanie do Google API (model {args.google_model})…")
+        result, raw = ask_google(args, system, user)
+        llm_info = google_info()
+    else:
+        if args.allow_google_api:
+            log(f"[4/5] Zapytanie do LLM ({args.base_url}, model {args.model}); "
+                f"zapas: Google API (model {args.google_model})…")
+        else:
+            log(f"[4/5] Zapytanie do LLM ({args.base_url}, model {args.model})…")
+        try:
+            result, raw = ask_local(args, system, user)
+            llm_info = {"provider": "local", "model": args.model, "base_url": args.base_url}
+        except Exception as exc:  # noqa: BLE001 — lokalny LLM niedostępny → Google (jeśli dozwolone)
+            if not args.allow_google_api:
+                raise
+            log(f"[llm] lokalny LLM niedostępny ({exc}) — używam Google API.")
+            result, raw = ask_google(args, system, user)
+            llm_info = google_info()
 
     # 5. walidacja
     txs, notes = validate_orders(result.get("orders", []), cash, holdings_valued, prices,
@@ -604,7 +732,8 @@ def main(argv=None) -> int:
     args.runs_dir.mkdir(parents=True, exist_ok=True)
     run_file = args.runs_dir / f"run_{now:%Y%m%d_%H%M%S}.json"
     run_file.write_text(json.dumps({
-        "time": now.isoformat(), "system": system, "user": user, "llm_raw": raw,
+        "time": now.isoformat(), "llm": llm_info,
+        "system": system, "user": user, "llm_raw": raw,
         "orders": [{"ticker": t.ticker, "side": t.side, "qty": t.qty, "price": str(t.price),
                     "cash_delta": str(t.cash_delta), "reason": t.reason} for t in txs],
         "notes": notes,
