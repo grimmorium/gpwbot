@@ -1,1 +1,2 @@
+cd /root/gpwbot/0.2
 python agent.py --base-url http://localhost:8080/v1 --model qwen --allow-google-api --google-api-key "" --use-google-api-only --google-model "gemini-flash-latest,gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-flash-lite-latest,gemma-4-31b-it,gemma-4-26b-a4b-it,gemini-2.5-flash,gemini-2.5-flash-lite" --show-prompt --execute --yes --mail "" --mail_always --smtp-user "" --smtp-pass ""
