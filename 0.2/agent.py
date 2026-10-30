@@ -8,7 +8,8 @@ Przepływ:
   4. LLM:               lokalny (API zgodne z OpenAI, np. llama.cpp server); opcjonalnie Google API —
                         --allow-google-api (zapas, gdy lokalny niedostępny) lub
                         --use-google-api-only (wyłącznie Google; oba wymagają --google-api-key KEY);
-                        --list-google-models wypisuje modele dostępne dla klucza
+                        --list-google-models wypisuje modele dostępne dla klucza;
+                        --google-model przyjmuje listę modeli po przecinku — przy błędzie próbowane kolejno
   5. walidacja zleceń:  w kodzie (stan gotówki, stan posiadania, limity) — nie ufamy LLM-owi
   6. zapis:             python app.py -n "PLN:-KWOTA|TICKER:ILOSC"   (tylko z --execute)
 
@@ -28,6 +29,7 @@ import json
 import math
 import os
 import re
+import smtplib
 import statistics
 import subprocess
 import sys
@@ -39,6 +41,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from email.message import EmailMessage
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -444,21 +447,39 @@ def ask_local(args, system: str, user: str) -> tuple[dict, str]:
     raise RuntimeError(f"LLM nie zwrócił poprawnego JSON-a. Ostatnia odpowiedź:\n{raw[:1000]}")
 
 
-def ask_google(args, system: str, user: str) -> tuple[dict, str]:
-    contents = [{"role": "user", "parts": [{"text": user}]}]
-    raw = ""
-    for attempt in (1, 2):
-        raw = google_chat(args.google_model, args.google_api_key, system, contents,
-                          args.temperature, args.max_tokens, args.timeout)
-        try:
-            return extract_json(raw), raw
-        except ValueError as exc:  # JSONDecodeError dziedziczy po ValueError
-            log(f"[llm] próba {attempt}: niepoprawny JSON ({exc})")
-            contents += [{"role": "model", "parts": [{"text": raw}]},
-                         {"role": "user", "parts": [
-                             {"text": "To nie jest poprawny JSON. "
-                                      "Zwróć wyłącznie obiekt JSON zgodny ze schematem."}]}]
-    raise RuntimeError(f"LLM (Google API) nie zwrócił poprawnego JSON-a. Ostatnia odpowiedź:\n{raw[:1000]}")
+def parse_model_list(value: str) -> list[str]:
+    """Lista modeli Google API po przecinku, np. 'gemini-2.5-flash,gemini-2.0-flash'."""
+    models = [m.strip() for m in value.split(",") if m.strip()]
+    if not models:
+        raise argparse.ArgumentTypeError("pusta lista modeli — podaj co najmniej jeden model")
+    return models
+
+
+def ask_google(args, system: str, user: str) -> tuple[dict, str, str]:
+    """Zapytanie do Google API; modele z args.google_models próbowane kolejno przy błędach."""
+    errors = []
+    for model in args.google_models:
+        contents = [{"role": "user", "parts": [{"text": user}]}]
+        raw = ""
+        for attempt in (1, 2):
+            try:
+                raw = google_chat(model, args.google_api_key, system, contents,
+                                  args.temperature, args.max_tokens, args.timeout)
+            except Exception as exc:  # noqa: BLE001 — niedostępny model → następny na liście
+                errors.append(f"{model}: {exc}")
+                log(f"[llm] Google API ({model}) nieudane: {exc}")
+                break
+            try:
+                return extract_json(raw), raw, model
+            except ValueError as exc:  # JSONDecodeError dziedziczy po ValueError
+                log(f"[llm] Google API ({model}), próba {attempt}/2: niepoprawny JSON ({exc})")
+                contents += [{"role": "model", "parts": [{"text": raw}]},
+                             {"role": "user", "parts": [
+                                 {"text": "To nie jest poprawny JSON. "
+                                          "Zwróć wyłącznie obiekt JSON zgodny ze schematem."}]}]
+        else:
+            errors.append(f"{model}: niepoprawny JSON po 2 próbach; ostatnia odpowiedź:\n{raw[:500]}")
+    raise RuntimeError("Google API — żaden z modeli nie zadziałał:\n" + "\n".join(errors))
 
 
 # --------------------------------------------------------------------------- walidacja zleceń
@@ -539,6 +560,57 @@ def validate_orders(raw_orders, cash: Decimal, holdings: dict[str, Decimal],
     return accepted, notes
 
 
+# --------------------------------------------------------------------------- raport e-mail
+
+def format_state(items: dict[str, Decimal]) -> str:
+    """Stan portfela w formacie wyjścia `app.py -l` (nagłówek + 'NAZWA  KWOTA', kwoty .5f)."""
+    table = [("ITEM_NAME", "SUM(ITEM_AMOUNT)")]
+    table += [(name, f"{value:.5f}") for name, value in items.items()]
+    widths = [max(len(row[i]) for row in table) for i in range(2)]
+    return "\n".join(f"{left:<{widths[0]}}  {right:>{widths[1]}}" for left, right in table)
+
+
+def _tx_line(i: int, tx: Tx, cash_name: str) -> str:
+    sign = "+" if tx.cash_delta > 0 else ""
+    return (f"{i}. {tx.side} {tx.ticker}: {tx.qty} szt. @ {tx.price:.2f} "
+            f"({sign}{tx.cash_delta} {cash_name}) — {tx.reason}")
+
+
+def build_mail_body(now, txs: list[Tx], cash_name: str, total_value: Decimal,
+                    pre_state: str, final_state: str, executed: bool) -> str:
+    lines = [f"Raport z działania agenta GPW ({now:%Y-%m-%d %H:%M}).", ""]
+    lines += [f"Szacowana wartość portfela: {total_value:.2f} {cash_name}", ""]
+    if pre_state:
+        lines += ["Stan portfela przed transakcjami:", pre_state, ""]
+    if not txs:
+        lines.append("Brak transakcji do wykonania.")
+    else:
+        label = ("Wykonane transakcje:" if executed
+                 else "Proponowane transakcje (tryb suchy — nie zapisano):")
+        lines += [label, ""]
+        lines += [_tx_line(i, tx, cash_name) for i, tx in enumerate(txs, 1)]
+    if executed and final_state:
+        lines += ["", "Stan portfela po transakcjach:", final_state.rstrip()]
+    return "\n".join(lines)
+
+
+def send_mail_report(args, now, txs: list[Tx], cash_name: str, total_value: Decimal,
+                     pre_state: str, final_state: str, executed: bool) -> None:
+    """Wysyła raport o działaniu agenta (wykonane/proponowane transakcje) przez SMTP."""
+    if not args.smtp_user or not args.smtp_pass:
+        raise RuntimeError("brak danych logowania SMTP — podaj --smtp-user/--smtp-pass "
+                           "(albo zmienne środowiskowe SMTP_USER/SMTP_PASS)")
+    msg = EmailMessage()
+    msg["From"] = args.smtp_user
+    msg["To"] = args.mail
+    msg["Subject"] = f"GPW agent — raport ({now:%Y-%m-%d %H:%M})"
+    msg.set_content(build_mail_body(now, txs, cash_name, total_value, pre_state, final_state, executed))
+    with smtplib.SMTP(args.smtp_host, args.smtp_port, timeout=60) as server:
+        server.starttls()
+        server.login(args.smtp_user, args.smtp_pass)
+        server.send_message(msg)
+
+
 # --------------------------------------------------------------------------- main
 
 def load_universe(args) -> dict[str, str]:
@@ -569,8 +641,9 @@ def main(argv=None) -> int:
     p.add_argument("--google-api-key", default=os.environ.get("GOOGLE_API_KEY"),
                    help="klucz Google AI Studio — wymagany przy --allow-google-api / "
                         "--use-google-api-only (domyślnie zmienna GOOGLE_API_KEY)")
-    p.add_argument("--google-model", default=os.environ.get("GOOGLE_MODEL", "gemini-2.5-flash"),
-                   help="model Google API (domyślnie gemini-2.5-flash lub $GOOGLE_MODEL)")
+    p.add_argument("--google-model", dest="google_models", type=parse_model_list, default=None,
+                   help="model(e) Google API po przecinku — przy błędzie próbowane kolejno "
+                        "(domyślnie gemini-2.5-flash lub $GOOGLE_MODEL)")
     p.add_argument("--list-google-models", action="store_true",
                    help="wypisz modele Google API dostępne dla klucza i zakończ")
     p.add_argument("--temperature", type=float, default=0.2)
@@ -583,14 +656,32 @@ def main(argv=None) -> int:
     p.add_argument("--news-days", type=int, default=3)
     p.add_argument("--execute", action="store_true", help="zapisz transakcje przez app.py -n")
     p.add_argument("--yes", action="store_true", help="z --execute: bez pytania o potwierdzenie")
+    p.add_argument("-m", "--mail",
+                   help="adres e-mail, na który po wykonaniu transakcji (--execute) "
+                        "wysyłany jest raport (bez parametru — brak maili)")
+    p.add_argument("--mail_always", action="store_true",
+                   help="wysyłaj raport e-mail zawsze (także gdy brak transakcji lub tryb suchy), "
+                        "nie tylko po wykonaniu transakcji; wymaga -m")
+    p.add_argument("--smtp-host", default=os.environ.get("SMTP_HOST", "smtp.gmail.com"))
+    p.add_argument("--smtp-port", type=int, default=int(os.environ.get("SMTP_PORT", "587")))
+    p.add_argument("--smtp-user", default=os.environ.get("SMTP_USER"),
+                   help="konto SMTP (domyślnie $SMTP_USER)")
+    p.add_argument("--smtp-pass", default=os.environ.get("SMTP_PASS"),
+                   help="hasło do konta SMTP, np. hasło aplikacji Gmail (domyślnie $SMTP_PASS)")
     p.add_argument("--show-prompt", action="store_true", help="wypisz prompt wysyłany do LLM")
     p.add_argument("--runs-dir", type=Path, default=HERE / "agent_runs")
     args = p.parse_args(argv)
+
+    if args.google_models is None:
+        args.google_models = parse_model_list(os.environ.get("GOOGLE_MODEL", "gemini-2.5-flash"))
 
     if (args.allow_google_api or args.use_google_api_only or args.list_google_models) \
             and not args.google_api_key:
         p.error("użycie Google API wymaga --google-api-key KEY "
                 "(albo zmiennej środowiskowej GOOGLE_API_KEY)")
+
+    if args.mail_always and not args.mail:
+        p.error("--mail_always wymaga podania adresu odbiorcy (-m/--mail)")
 
     if args.list_google_models:
         log("Pobieranie listy modeli Google API…")
@@ -605,6 +696,7 @@ def main(argv=None) -> int:
     # 1. portfel
     log("[1/5] Odczyt portfela…")
     items = read_portfolio(args.app, args.db)
+    pre_state = format_state(items)  # stan przed transakcjami (do raportu e-mail); przed pop() gotówki
     cash = items.pop(args.cash_name, Decimal(0))
     holdings = {k: v for k, v in items.items() if v > 0}
     for k, v in items.items():
@@ -704,18 +796,18 @@ def main(argv=None) -> int:
     if args.show_prompt:
         print("=== SYSTEM ===\n" + system + "\n\n=== USER ===\n" + user + "\n", file=sys.stderr)
 
-    def google_info() -> dict:
-        return {"provider": "google", "model": args.google_model,
-                "endpoint": google_endpoint(args.google_model)}
+    def google_info(model: str) -> dict:
+        return {"provider": "google", "model": model, "endpoint": google_endpoint(model)}
 
+    models_str = ", ".join(args.google_models)
     if args.use_google_api_only:
-        log(f"[4/5] Zapytanie do Google API (model {args.google_model})…")
-        result, raw = ask_google(args, system, user)
-        llm_info = google_info()
+        log(f"[4/5] Zapytanie do Google API (modele: {models_str})…")
+        result, raw, used_model = ask_google(args, system, user)
+        llm_info = google_info(used_model)
     else:
         if args.allow_google_api:
             log(f"[4/5] Zapytanie do LLM ({args.base_url}, model {args.model}); "
-                f"zapas: Google API (model {args.google_model})…")
+                f"zapas: Google API (modele: {models_str})…")
         else:
             log(f"[4/5] Zapytanie do LLM ({args.base_url}, model {args.model})…")
         try:
@@ -725,8 +817,8 @@ def main(argv=None) -> int:
             if not args.allow_google_api:
                 raise
             log(f"[llm] lokalny LLM niedostępny ({exc}) — używam Google API.")
-            result, raw = ask_google(args, system, user)
-            llm_info = google_info()
+            result, raw, used_model = ask_google(args, system, user)
+            llm_info = google_info(used_model)
 
     # 5. walidacja
     txs, notes = validate_orders(result.get("orders", []), cash, holdings_valued, prices,
@@ -765,19 +857,32 @@ def main(argv=None) -> int:
     log(f"\nZapisano log: {run_file}")
 
     # 6. zapis
-    if not txs:
-        return 0
-    if not args.execute:
+    executed = False
+    if txs and args.execute:
+        if not args.yes:
+            if input("\nZapisać powyższe transakcje w bazie? [t/N] ").strip().lower() not in ("t", "y", "tak"):
+                print("Anulowano.")
+                return 0
+        for tx in txs:
+            run_app(args.app, args.db, "-n", tx.cli_arg(args.cash_name))
+        executed = True
+    elif txs:
         print("\nTRYB SUCHY — nic nie zapisano. Użyj --execute, aby wprowadzić transakcje.")
-        return 0
-    if not args.yes:
-        if input("\nZapisać powyższe transakcje w bazie? [t/N] ").strip().lower() not in ("t", "y", "tak"):
-            print("Anulowano.")
-            return 0
-    for tx in txs:
-        run_app(args.app, args.db, "-n", tx.cli_arg(args.cash_name))
-    print(f"Zapisano {len(txs)} transakcji. Aktualny stan portfela:")
-    print(run_app(args.app, args.db, "-l"))
+
+    if executed:
+        final_state = run_app(args.app, args.db, "-l")
+        print(f"Zapisano {len(txs)} transakcji. Aktualny stan portfela:")
+        print(final_state)
+    else:
+        final_state = ""
+
+    # raport e-mail — po wykonaniu transakcji albo zawsze (--mail_always); wymaga -m
+    if args.mail and (executed or args.mail_always):
+        try:
+            send_mail_report(args, now, txs, args.cash_name, total, pre_state, final_state, executed)
+            log(f"[mail] raport wysłany na {args.mail}")
+        except Exception as exc:  # noqa: BLE001 — nieudany mail nie cofa zapisanych transakcji
+            log(f"[mail] nie udało się wysłać raportu: {exc}")
     return 0
 
 
