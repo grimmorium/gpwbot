@@ -6,6 +6,8 @@ Uruchomienie GUI:  python app.py
 Tryb konsolowy:    python app.py -l   (wypisuje dane z zakładki TOTAL na stdout)
 Dodawanie wpisów:  python app.py -n NAZWA1:KWOTA1|NAZWA2:KWOTA2
                    (np. python app.py -n ITM1:-100.2|ITM2:23; działa też w połączeniu z -l)
+Filtrowanie TOTAL: python app.py -l -t "YYYYMMDD HH:mm:SS.ms"
+                   (pokaż tylko wpisy, dla których TRANS_DATE_TIME <= podana wartość)
 Opcjonalnie:       -d SCIEZKA         (plik bazy SQLite; domyślnie operations.db obok skryptu)
 
 Uwaga: DDL ze specyfikacji ("ID IDENTITY AUTO_INCREMENT") nie jest poprawnym SQL żadnego
@@ -17,6 +19,7 @@ import argparse
 import re
 import sqlite3
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -29,7 +32,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS [OPERATIONS] (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     ITEM_NAME VARCHAR(50) NOT NULL,
-    ITEM_AMOUNT NUMBER(20,5)
+    ITEM_AMOUNT NUMBER(20,5),
+    TRANS_DATE_TIME TIMESTAMP NOT NULL
 );
 """
 
@@ -39,34 +43,66 @@ FROM [OPERATIONS]
 GROUP BY ITEM_NAME HAVING SUM(ITEM_AMOUNT) != 0;
 """
 
-QUERY_LIST = """
-SELECT ID, ITEM_NAME, ITEM_AMOUNT
+QUERY_TOTAL_UP_TO = """
+SELECT ITEM_NAME, SUM(ITEM_AMOUNT)
 FROM [OPERATIONS]
-ORDER BY ID DESC;
+WHERE TRANS_DATE_TIME <= ?
+GROUP BY ITEM_NAME HAVING SUM(ITEM_AMOUNT) != 0;
 """
 
-INSERT_SQL = "INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT) VALUES (?, ?);"
+QUERY_LIST = """
+SELECT ID, ITEM_NAME, ITEM_AMOUNT, TRANS_DATE_TIME
+FROM [OPERATIONS]
+ORDER BY TRANS_DATE_TIME, ID;
+"""
+
+INSERT_SQL = (
+    "INSERT INTO [OPERATIONS](ITEM_NAME, ITEM_AMOUNT, TRANS_DATE_TIME) VALUES (?, ?, ?);"
+)
+
+
+def _migrate(conn) -> None:
+    """Migracja baz ze starą strukturą — dodaje kolumnę TRANS_DATE_TIME.
+
+    Starsze wiersze dostają znacznik '00010101 00:00:00.000': ich czas transakcji jest nieznany.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(OPERATIONS)")}
+    if "TRANS_DATE_TIME" not in cols:
+        conn.execute(
+            "ALTER TABLE [OPERATIONS] ADD COLUMN TRANS_DATE_TIME TIMESTAMP NOT NULL "
+            "DEFAULT '00010101 00:00:00.000';"
+        )
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.execute(SCHEMA)
+    _migrate(conn)
     conn.commit()
     return conn
 
 
-def fetch_total(conn):
-    return conn.execute(QUERY_TOTAL).fetchall()
+def fetch_total(conn, trans_dt=None):
+    if trans_dt is None:
+        return conn.execute(QUERY_TOTAL).fetchall()
+    return conn.execute(QUERY_TOTAL_UP_TO, (trans_dt,)).fetchall()
 
 
 def fetch_list(conn):
     return conn.execute(QUERY_LIST).fetchall()
 
 
+def trans_timestamp() -> str:
+    """Bieżąca data i czas w formacie [YYYYMMDD HH:mm:SS.ms], np. 20261030 14:35:27.123."""
+    now = datetime.now()
+    return f"{now:%Y%m%d %H:%M:%S}.{now.microsecond // 1000:03d}"
+
+
 def insert_operations(conn, name1: str, amount1: Decimal, name2: str, amount2: Decimal) -> None:
+    stamp = trans_timestamp()  # obie pozycje transakcji dostają identyczny znacznik czasu
     with conn:  # jedna transakcja — oba wpisy lub żaden
-        conn.execute(INSERT_SQL, (name1, float(amount1)))
-        conn.execute(INSERT_SQL, (name2, float(amount2)))
+        conn.execute(INSERT_SQL, (name1, float(amount1), stamp))
+        conn.execute(INSERT_SQL, (name2, float(amount2), stamp))
 
 
 _AMOUNT_RE = re.compile(r"^[+-]?\d+(?:\.\d*)?$")
@@ -124,8 +160,21 @@ def parse_new_entries(raw: str):
     return tuple(entries)
 
 
-def print_total(conn) -> None:
-    rows = fetch_total(conn)
+_TRANS_DT_RE = re.compile(r"^\d{8} \d{2}:\d{2}:\d{2}\.\d{3}$")
+
+
+def parse_trans_datetime(raw: str) -> str:
+    """Waliduje wartość parametru -t w formacie [YYYYMMDD HH:mm:SS.ms]."""
+    s = raw.strip()
+    if not _TRANS_DT_RE.match(s):
+        raise ValueError(
+            "Parametr -t: oczekiwano formatu YYYYMMDD HH:mm:SS.ms (np. 20261001 01:01:00.000)."
+        )
+    return s
+
+
+def print_total(conn, trans_dt=None) -> None:
+    rows = fetch_total(conn, trans_dt)
     table = [("ITEM_NAME", "SUM(ITEM_AMOUNT)")]
     table += [(name, format_amount(total)) for name, total in rows]
     widths = [max(len(row[i]) for row in table) for i in range(2)]
@@ -237,22 +286,26 @@ def run_gui(db_path: Path) -> None:
             self.tree_total.column("item_name", width=240, anchor="w")
             self.tree_total.column("sum", width=160, anchor="e")
 
-            self.tree_list = self._make_tree(tab_list, ("id", "item_name", "amount"))
+            self.tree_list = self._make_tree(
+                tab_list, ("id", "item_name", "amount", "trans_date_time")
+            )
             self.tree_list.heading("id", text="ID")
             self.tree_list.heading("item_name", text="ITEM_NAME")
             self.tree_list.heading("amount", text="ITEM_AMOUNT")
+            self.tree_list.heading("trans_date_time", text="TRANS DATE TIME")
             self.tree_list.column("id", width=70, anchor="e")
             self.tree_list.column("item_name", width=240, anchor="w")
             self.tree_list.column("amount", width=160, anchor="e")
+            self.tree_list.column("trans_date_time", width=190, anchor="w")
 
         def refresh(self):
             for tree in (self.tree_total, self.tree_list):
                 tree.delete(*tree.get_children())
             for name, total in fetch_total(self.db):
                 self.tree_total.insert("", "end", values=(name, format_amount(total)))
-            for row_id, name, amount in fetch_list(self.db):
+            for row_id, name, amount, trans_dt in fetch_list(self.db):
                 self.tree_list.insert(
-                    "", "end", values=(row_id, name, format_amount(amount))
+                    "", "end", values=(row_id, name, format_amount(amount), trans_dt)
                 )
 
         def _open_transaction(self):
@@ -290,10 +343,21 @@ def main(argv=None) -> int:
         ),
     )
     parser.add_argument(
+        "-t", "--trans-date-time", metavar="YYYYMMDD HH:mm:SS.ms",
+        help=(
+            "do użycia z -l: wypisz TOTAL tylko dla wpisów, dla których "
+            "TRANS_DATE_TIME <= podana wartość (np. \"20261001 01:01:00.000\")"
+        ),
+    )
+    parser.add_argument(
         "-d", "--db", type=Path, default=DEFAULT_DB, metavar="SCIEZKA",
         help=f"plik bazy SQLite (domyślnie: {DEFAULT_DB.name} obok skryptu)",
     )
     args = parser.parse_args(argv)
+
+    if args.trans_date_time is not None and not args.list:
+        print("Opcja -t wymaga opcji -l.", file=sys.stderr)
+        return 1
 
     try:
         if args.new is not None or args.list:
@@ -305,13 +369,17 @@ def main(argv=None) -> int:
                     if not args.list:
                         print("Dodano 2 wpisy.")
                 if args.list:
-                    print_total(conn)
+                    trans_dt = (
+                        parse_trans_datetime(args.trans_date_time)
+                        if args.trans_date_time is not None else None
+                    )
+                    print_total(conn, trans_dt)
             finally:
                 conn.close()
             return 0
         run_gui(args.db)
     except ValueError as exc:
-        print(f"Błąd parametru -n: {exc}", file=sys.stderr)
+        print(f"Błąd parametrów: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:
         print(f"Błąd bazy danych: {exc}", file=sys.stderr)
