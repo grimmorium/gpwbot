@@ -648,6 +648,24 @@ def main(argv=None) -> int:
         if t not in prices:
             warnings.append(f"Pozycja {t} bez wyceny — nie można nią handlować.")
     total = cash + sum(q * prices[t] for t, q in holdings_valued.items())
+
+    # Wycena portfela (gotówka + akcje po bieżących kursach) → JSON w agent_runs/
+    args.runs_dir.mkdir(parents=True, exist_ok=True)
+    portfolio_file = args.runs_dir / f"portfolio_{now:%Y%m%d_%H%M%S}.json"
+    portfolio_file.write_text(json.dumps({
+        "time": now.isoformat(),
+        "cash_name": args.cash_name,
+        "cash": str(cash),
+        "positions": [
+            {"ticker": t, "quantity": str(q), "price": str(prices[t]),
+             "estimated_value": str(q * prices[t])}
+            for t, q in holdings_valued.items()
+        ],
+        "unvalued_positions": sorted(t for t in holdings if t not in prices),
+        "total_estimated_value": str(total),
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    log(f"[wycena] wartość portfela ≈ {total:.2f} PLN — zapisano: {portfolio_file}")
+
     portfolio_rows = [
         f"{t}: {q} szt. × {prices[t]:.2f} = {q * prices[t]:.2f} PLN "
         f"({(q * prices[t] / total * 100) if total else 0:.1f}% portfela)"
